@@ -17,7 +17,10 @@ const PUBLIC_NAV = [
   { href: '/webhooks', label: 'Webhooks' },
 ];
 
-const CUSTOMER_NAV = [{ href: '/portfolio', label: 'Portfolio' }];
+const CUSTOMER_NAV = [
+  { href: '/portfolio', label: 'Portfolio' },
+  { href: '/fund', label: 'Fund & invest' },
+];
 const OPS_NAV = [{ href: '/ops', label: 'Ops console' }];
 
 export default async function RootLayout({

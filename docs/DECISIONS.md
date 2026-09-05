@@ -713,3 +713,52 @@ enabled for the Alpaca processor integration —
 integration`. It is a toggle in the Plaid dashboard under
 Developers -> Integrations. Until it is flipped, the processor token cannot be
 minted and the ACH relationship cannot be created from Plaid.
+
+---
+
+## 2026-09-06T00:15Z — The funding path, in the UI, on real rails
+
+**Built:** `/fund` drives the whole money path through the deployed app —
+link a bank, deposit, invest — against two live provider sandboxes.
+
+Proven against the deployed system, in order:
+
+1. **Linking a stranger's account is refused.** HTTP 422:
+   *"That account belongs to Alberta Bobbeth Charleson, not Dana Whitfield."*
+   The attempt is still recorded — an ops team wants to find those later — but
+   the link is never activated.
+2. **Linking the customer's own account succeeds.** Plaid verified the owner,
+   minted a processor token scoped to Alpaca, Alpaca redeemed it as an ACH
+   relationship, and a brokerage account was opened along the way.
+3. **A $25,000 deposit is accepted** by Alpaca and booked as
+   `assets:cash:pending_deposit` — in flight, excluded from portfolio value.
+4. **Orders are refused, correctly**, because the money has not settled.
+
+**The refusal path got the most design attention, deliberately.** A demo that
+only shows successes is hiding the half that matters. The mismatch button on
+`/fund` is a first-class control, not a debug affordance: funding an investment
+account from someone else's bank is how laundering works, so the refusal is the
+interesting path.
+
+**On the order refusal — a decision worth recording.** The naive version lets
+Alpaca reject each of the four orders separately with an opaque
+`account is not allowed to trade` or `insufficient buying power`. Instead the
+route asks the broker for its own view first and reports BOTH numbers:
+
+```
+ourInvestableCash: $6,224.00     <- our ledger
+brokerBuyingPower: $0.00         <- Alpaca
+pendingDeposits:   $25,000.00    <- why they differ
+```
+
+Their balance is their ledger; ours is ours. Where the two disagree that is a
+reconciliation break, and the right response is to show both figures and the
+reason — never to quietly trust one or paper over the gap. This is the same
+instinct the reconciliation screen will formalise.
+
+**What is still blocked:** a real FILL. Two independent reasons, both the rail's
+clock rather than our integration — Alpaca sandbox settles ACH on trading days,
+and market orders fill in market hours. It is Saturday. Everything up to and
+including order submission is real and working today; fills flow automatically
+the moment funds land, because the fill path is the webhook pipeline that
+already exists and is already tested.
