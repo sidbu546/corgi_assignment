@@ -1,6 +1,9 @@
 {
   "compilerOptions": {
-    "target": "ES2017",
+    // ES2022 rather than the Next.js default of ES2017: every USD amount in
+    // this system is a bigint, and BigInt literals (0n) need ES2020+.
+    // Money is never a float, so this target is not negotiable.
+    "target": "ES2022",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,

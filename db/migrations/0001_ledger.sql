@@ -116,6 +116,15 @@ CREATE TABLE IF NOT EXISTS journal_lines (
   amount_cents  bigint,
   units         numeric(28, 6),
 
+  -- Which instrument a USD line is ABOUT, when it is about one.
+  --
+  -- Cost basis, realised gain and dividend income are all denominated in USD
+  -- but belong to a specific instrument. Without this column the only way to
+  -- associate them would be parsing a memo string, which is how reporting
+  -- quietly breaks the first time someone edits a memo. A USD line may carry a
+  -- related_symbol; a unit line already IS its symbol and must not.
+  related_symbol text,
+
   memo          text,
 
   CONSTRAINT journal_lines_usd_uses_cents
@@ -126,12 +135,19 @@ CREATE TABLE IF NOT EXISTS journal_lines (
   -- A zero-quantity line carries no information and would let an entry look
   -- balanced while saying nothing.
   CONSTRAINT journal_lines_nonzero
-    CHECK (COALESCE(amount_cents, 0) <> 0 OR COALESCE(units, 0) <> 0)
+    CHECK (COALESCE(amount_cents, 0) <> 0 OR COALESCE(units, 0) <> 0),
+
+  -- A unit line is already denominated in its instrument; tagging it with a
+  -- second symbol could only ever disagree with itself.
+  CONSTRAINT journal_lines_related_symbol_is_usd_only
+    CHECK (related_symbol IS NULL OR commodity = 'USD')
 );
 
 CREATE INDEX IF NOT EXISTS journal_lines_entry_idx    ON journal_lines (entry_id);
 CREATE INDEX IF NOT EXISTS journal_lines_account_idx  ON journal_lines (account_code);
 CREATE INDEX IF NOT EXISTS journal_lines_customer_idx ON journal_lines (customer_id, commodity);
+CREATE INDEX IF NOT EXISTS journal_lines_symbol_idx
+  ON journal_lines (customer_id, related_symbol) WHERE related_symbol IS NOT NULL;
 
 -- -----------------------------------------------------------------------------
 -- Invariant 1: a line must respect its account's declared dimension and book.
