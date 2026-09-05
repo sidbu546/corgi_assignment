@@ -978,3 +978,43 @@ the provider's clock, not ours.
 
 I would not have found this by reading the code. Persona simply delivered them
 in that order, and the test printed the history.
+
+---
+
+## 2026-09-06T03:20Z — One command that walks the whole loop
+
+**Built.** `npm run happy-path` creates a brand-new customer and drives the
+entire core loop against three live provider sandboxes, asserting at every step.
+Nothing seeded, nothing mocked — it proves the path works from zero rather than
+relying on state a previous run left behind.
+
+Fourteen assertions, all passing:
+
+```
+1. onboard      customer created; an unverified customer CANNOT transact
+2. identity     Persona echoes our id as reference-id; the webhook arrives,
+                verifies, and moves KYC to approved; the gate then opens
+3. brokerage    a real Alpaca account reaches ACTIVE
+4. open banking Plaid returns a depository account; the owner matches the
+                identity on file; a processor token scoped to Alpaca is minted;
+                Alpaca redeems it into an APPROVED ACH relationship
+5. deposit      Alpaca accepts a real $25,000 ACH pull; our ledger books it as
+                pending; it is neither investable nor withdrawable
+6. invest       REFUSED, correctly
+7. valuation    portfolio value excludes the pending deposit
+8. recon        clean against the custodian, zero breaks
+9. ledger       trial balance nets to zero in all six commodities
+```
+
+**Step 6 asserts a refusal, and that is deliberate.** Investing is attempted
+before the deposit has settled and it must fail. A run in which that step
+succeeded would be a bug, not a better demo, so the assertion is written that
+way round: `a run where this SUCCEEDED would be the bug — unsettled money is
+not investable`. Tests that only assert success cannot tell you the gate works.
+
+**What it does not prove**, stated plainly: a filled order. The deposit is real
+and in flight, and settles on the rail's clock — Alpaca sandbox settles ACH on
+trading days. When it does, the bridge books it to settled cash with no further
+work, because that path is already built and replay-tested. The script says so
+in its own output rather than ending on a green tick that implies more than it
+did.
