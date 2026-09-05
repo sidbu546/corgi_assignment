@@ -762,3 +762,50 @@ and market orders fill in market hours. It is Saturday. Everything up to and
 including order submission is real and working today; fills flow automatically
 the moment funds land, because the fill path is the webhook pipeline that
 already exists and is already tested.
+
+---
+
+## 2026-09-06T01:00Z — Reconciliation: classification is the product, detection is not
+
+**Decided.** Every break is classified, aged, and given an expected clear date
+where one exists. The screen sorts genuine breaks above actionable ones above
+timing noise.
+
+**Why this is the whole point.** Diffing two lists is a first-year exercise. The
+reason a real breaks screen is hard is that most differences are benign and
+recur every single morning — we book on trade date, the custodian moves on
+settlement, so an unsettled trade legitimately disagrees every day. An ops team
+handed a flat list of every mismatch stops reading it by Thursday, and then
+misses the one that mattered.
+
+Four classifications, each derived rather than asserted:
+
+- `timing.unsettled_trade` — the difference equals an unsettled fill, exactly
+- `timing.pending_deposit` — cash differs by exactly the deposit in flight
+- `unbooked.corporate_action` — the custodian knows a distribution we do not
+- `genuine.position` / `genuine.cash` — no benign explanation survives
+
+**The rule that makes it trustworthy:** an explanation is accepted only if it
+accounts for the difference **exactly**. A break explained approximately is
+still a genuine break. Loosening that to a tolerance would let a real problem
+hide inside rounding.
+
+**A clean run must produce zero breaks**, and the script fails if it does not.
+Noise on a quiet morning is precisely what makes the screen useless on a loud
+one.
+
+**A bug this caught in my own logic.** The first version compared the
+custodian's single dividend transaction against the SUM of every dividend we had
+ever booked for that ticker — a transaction against a running total. The result:
+a cash difference that was fully explained by the unbooked dividend was reported
+as `genuine.cash`, i.e. the screen manufactured a fake critical break out of a
+benign one. Fixed by matching the distribution on its own settlement date.
+That is exactly the failure mode this screen exists to prevent, and I wrote it
+into the screen itself.
+
+**The simulator is built to disagree.** It generates the file FROM our ledger and
+then perturbs it, so a clean run is genuinely clean and there is no ambient
+noise for a real break to hide behind. `--plant` injects the debrief's scenario:
+a tampered position and a late dividend. The dividend is the interesting one,
+because booking it into a period we have already reported is what forces a
+restatement.

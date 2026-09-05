@@ -12,6 +12,7 @@
     "verify": "tsx db/verify-invariants.ts",
     "replay-test": "tsx scripts/replay-test.ts",
     "value": "tsx scripts/value-history.ts",
+    "recon": "tsx scripts/run-recon.ts",
     "inspect": "tsx scripts/inspect.ts",
     "test": "tsx --test \"src/**/*.test.ts\""
   },

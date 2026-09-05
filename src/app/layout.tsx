@@ -21,7 +21,10 @@ const CUSTOMER_NAV = [
   { href: '/portfolio', label: 'Portfolio' },
   { href: '/fund', label: 'Fund & invest' },
 ];
-const OPS_NAV = [{ href: '/ops', label: 'Ops console' }];
+const OPS_NAV = [
+  { href: '/ops', label: 'Ops console' },
+  { href: '/recon', label: 'Reconciliation' },
+];
 
 export default async function RootLayout({
   children,
