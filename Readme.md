@@ -210,22 +210,39 @@ Kept current rather than aspirational. The same table is rendered on the
 
 **Built**
 
-- Multi-commodity double-entry ledger, bitemporal, append-only — 20/20 invariants proven
-- Money primitives and deterministic penny allocation — 15 tests
-- Tax lots, FIFO consumption, realised gain, basis-drift proof — 11 tests
-- Time-weighted return with structural flow exclusion — 13 tests
-- Provider registry with honest labelling and a deliberate kill switch
-- Alpaca Broker client, verified end to end against the sandbox
-- Deployed, publicly reachable, four working pages
+| | Proof you can run |
+|---|---|
+| Multi-commodity double-entry ledger, bitemporal, append-only | `npm run verify` — 20/20 |
+| Money primitives, deterministic penny | `npm test` — 15 tests |
+| Tax lots, FIFO, realised gain, basis-drift proof | `npm test` — 11 tests |
+| Time-weighted return, flows structurally excluded | `npm test` — 13 tests |
+| Market calendar, T+1 settlement across holidays | `npm test` — 17 tests |
+| Webhooks: signed, idempotent, replay-proof | `npm run replay-test` — 6/6 |
+| Event bridge — 3 Alpaca SSE streams, **no polling** | `npm run bridge` |
+| KYC onboarding — real Persona inquiry + webhooks | `npx tsx scripts/smoke-kyc.ts` — approved **and** declined |
+| Open banking — Plaid Link, owner check, ACH deposit | `npx tsx scripts/smoke-funding.ts` |
+| Daily valuation with stale-price handling | `npm run value` — 88 runs |
+| Custodian simulator + **classified** reconciliation | `npm run recon` / `--plant` |
+| Restatement — as-published vs as-corrected | `npm run restate` — 9/9 |
+| Auth, customer portfolio, ops console | `npx tsx scripts/smoke-ui.ts` — 22/22 |
+| Seed from zero | `npm run seed -- --reset` |
+| **The whole core loop, one command** | **`npm run happy-path` — 14/14** |
+
+**Blocked (not by us)**
+
+- **A filled Alpaca order.** Orders are submitted for real and are correctly
+  refused before settlement. Alpaca's sandbox settles ACH on *trading days*
+  (`allow_instant_ach=false`, incoming wires refused by the API, no firm account
+  exposed to journal from), and market orders fill in market hours. When funds
+  land, the bridge books them and the fill path runs unchanged — it is already
+  built and replay-tested.
 
 **Not yet built**
 
-- Webhook endpoints with signature verification and idempotent consumers
-- Seed script (`npm run seed`) — the ledger pages are empty until this lands
-- Authentication and the customer / ops portals
-- Custodian file simulator and the reconciliation breaks screen
-- Restatement machinery (corrected close → restated return, as-published preserved)
 - MCP agent surface
+- Maker-checker execution path (schema and queue exist; nothing executes yet)
+- A restatement UI showing as-published beside as-corrected (the machinery is
+  done and proven; only the screen is missing)
 
 ---
 
