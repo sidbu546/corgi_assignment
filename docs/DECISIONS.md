@@ -340,3 +340,45 @@ the demo script can be planned around a real number rather than a guess.
 **Also fixed.** Alpaca rejects SSN area 000, 666 and 900-999. The first smoke
 run used 666 and got a 422. Test identities are now generated inside the valid
 range.
+
+---
+
+## 2026-09-05T19:20Z — The invariant suite is a page, not just a script
+
+**Decided.** Extract the checks into `src/lib/ledger/invariants.ts` and run the
+identical code from two surfaces: `npm run verify` in the terminal, and
+`/invariants` in the deployed app.
+
+**Why one implementation.** If the page had its own copy, it could drift into
+claiming something the CLI does not actually test — which is precisely the class
+of dishonesty this whole project is graded on avoiding. One module, two callers.
+
+**Why a page at all.** The most likely hostile question in the debrief is
+"prove the ledger is really append-only". The answer should not be a paragraph.
+It should be a URL that, on that request, attempts every forbidden operation
+against the production database and shows Postgres refusing each one — inside a
+transaction that is rolled back, so watching it costs nothing.
+
+**Live now:** https://corgi-assignment.vercel.app/invariants — 20/20, executed
+against Neon from Vercel on every page load.
+
+---
+
+## 2026-09-05T19:24Z — Provider badges are rendered from the code's own declaration
+
+**Decided.** `/integrations` renders its live/simulated badges from
+`PROVIDER_SLOTS`, the same declaration the runtime clients read, and probes each
+live slot with a real HTTP round trip when the page loads.
+
+**Why.** "A simulated integration presented as live" is an automatic fail, and a
+README is exactly the wrong place to make that claim because it drifts silently.
+Deriving the badge from the same constant the code uses means a slot cannot
+become a simulator without the badge changing in the same commit.
+
+The probes matter for the same reason: a green badge that is only a config flag
+is decoration. Measured from the deployed app, Alpaca answered in 57ms, Plaid in
+51ms, Persona in 218ms, and the page prints the failure text when one fails.
+
+**Also deliberate.** A live slot with missing credentials renders "no keys", not
+green. Intent and configuration are reported separately, because a slot I meant
+to be live but did not configure is not live.

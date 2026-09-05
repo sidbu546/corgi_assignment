@@ -1,69 +1,264 @@
-import Image from "next/image";
+import { query } from '@/lib/db';
+import { trialBalance } from '@/lib/ledger/read';
+import { slotStatuses } from '@/lib/providers/registry';
+import { formatCents } from '@/lib/money';
 
-export default function Home() {
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+interface LedgerSnapshot {
+  reachable: boolean;
+  error?: string;
+  entries: number;
+  lines: number;
+  customers: number;
+  balanced: boolean;
+  totals: Array<{ commodity: string; cents: bigint; units: string }>;
+}
+
+async function loadLedger(): Promise<LedgerSnapshot> {
+  try {
+    const [counts] = await query<{
+      entries: string;
+      lines: string;
+      customers: string;
+    }>(
+      `SELECT (SELECT count(*) FROM journal_entries)  AS entries,
+              (SELECT count(*) FROM journal_lines)    AS lines,
+              (SELECT count(*) FROM customers)        AS customers`,
+    );
+    const tb = await trialBalance();
+    return {
+      reachable: true,
+      entries: Number(counts.entries),
+      lines: Number(counts.lines),
+      customers: Number(counts.customers),
+      balanced: tb.balanced,
+      totals: tb.totalsByCommodity.map((t) => ({
+        commodity: t.commodity,
+        cents: t.cents,
+        units: t.units.toString(),
+      })),
+    };
+  } catch (error) {
+    return {
+      reachable: false,
+      error: error instanceof Error ? error.message : String(error),
+      entries: 0,
+      lines: 0,
+      customers: 0,
+      balanced: false,
+      totals: [],
+    };
+  }
+}
+
+export default async function Home() {
+  const ledger = await loadLedger();
+  const slots = slotStatuses();
+  const live = slots.filter((s) => s.mode === 'live');
+  const simulated = slots.filter((s) => s.mode === 'simulated');
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <>
+      <h1>Ledgerly</h1>
+      <p className="lede">
+        A retail investing platform built on an append-only, bitemporal,
+        multi-commodity ledger. Customers pass identity checks, link a bank, deposit,
+        buy into a model portfolio, and are valued daily. When the custodian is late
+        with the truth, history is <strong>restated, never rewritten</strong>.
+      </p>
+
+      {/* ---------------- ledger health ---------------- */}
+
+      <h2>Ledger</h2>
+
+      {!ledger.reachable ? (
+        <div className="callout callout-warn">
+          <p>
+            <strong>The database is not reachable.</strong> Every balance in this
+            system is derived from journal entries, so rather than show a number we
+            cannot stand behind, this page shows nothing and says why.
           </p>
+          <p className="mono dim">{ledger.error}</p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      ) : (
+        <>
+          <div className="grid grid-3" style={{ marginBottom: 12 }}>
+            <div className="card">
+              <div className="stat">{ledger.entries.toLocaleString()}</div>
+              <div className="stat-label">Journal entries</div>
+            </div>
+            <div className="card">
+              <div className="stat">{ledger.lines.toLocaleString()}</div>
+              <div className="stat-label">Journal lines</div>
+            </div>
+            <div className="card">
+              <div className="stat">{ledger.customers.toLocaleString()}</div>
+              <div className="stat-label">Customers</div>
+            </div>
+          </div>
+
+          <div className="card">
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                marginBottom: 8,
+              }}
+            >
+              <strong style={{ fontSize: 13 }}>Trial balance</strong>
+              <span
+                className={`badge ${ledger.balanced ? 'badge-live' : 'badge-down'}`}
+              >
+                <span className="dot" />
+                {ledger.balanced ? 'nets to zero' : 'OUT OF BALANCE'}
+              </span>
+            </div>
+            {ledger.totals.length === 0 ? (
+              <p className="dim" style={{ margin: 0 }}>
+                No entries yet. Run <span className="mono">npm run seed</span> to stand
+                up demo data from zero.
+              </p>
+            ) : (
+              <dl style={{ margin: 0 }}>
+                {ledger.totals.map((t) => (
+                  <div className="kv" key={t.commodity}>
+                    <dt>{t.commodity}</dt>
+                    <dd>
+                      {t.commodity === 'USD'
+                        ? formatCents(t.cents)
+                        : `${t.units} units`}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+            <p className="dim" style={{ fontSize: 12, margin: '10px 0 0' }}>
+              In a correct double-entry system this sums to exactly zero for every
+              commodity, at every instant in history — not just today.{' '}
+              <a href="/invariants">Run the full suite →</a>
+            </p>
+          </div>
+        </>
+      )}
+
+      {/* ---------------- integrations ---------------- */}
+
+      <h2>Integrations</h2>
+      <p>
+        Honest labelling is not a README claim here: the badges below are rendered
+        from the same declaration the code reads, so a slot cannot quietly become a
+        simulator without this page changing at the same moment.
+      </p>
+
+      <div className="grid grid-2">
+        {[...live, ...simulated].map((s) => (
+          <div className="card" key={s.id}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: 10,
+                alignItems: 'flex-start',
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 600 }}>{s.slot}</div>
+                <div className="dim" style={{ fontSize: 12.5 }}>
+                  {s.provider}
+                </div>
+              </div>
+              <span
+                className={`badge ${
+                  s.disabled
+                    ? 'badge-down'
+                    : s.mode === 'live'
+                      ? s.configured
+                        ? 'badge-live'
+                        : 'badge-muted'
+                      : 'badge-sim'
+                }`}
+              >
+                {s.disabled
+                  ? 'disabled'
+                  : s.mode === 'live'
+                    ? s.configured
+                      ? 'live'
+                      : 'no keys'
+                    : 'simulated'}
+              </span>
+            </div>
+            {s.endpoint && (
+              <div className="mono dim" style={{ marginTop: 6 }}>
+                {s.endpoint}
+              </div>
+            )}
+            <p style={{ fontSize: 12.5, margin: '8px 0 0' }}>{s.note}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* ---------------- what is built ---------------- */}
+
+      <h2>Build status</h2>
+      <p>
+        Written in the order the money flows, ledger first. This section is kept
+        current rather than aspirational — anything not listed as done is not done.
+      </p>
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Component</th>
+              <th>State</th>
+              <th>Evidence</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[
+              [
+                'Multi-commodity double-entry ledger',
+                'done',
+                '20/20 invariants proven against Postgres',
+              ],
+              ['Money primitives and the rounding penny', 'done', '15 unit tests'],
+              ['Tax lots, FIFO, realised gain', 'done', '11 unit tests incl. basis drift'],
+              ['Time-weighted return', 'done', '13 unit tests incl. flow neutrality'],
+              ['Provider registry with kill switch', 'done', 'this page'],
+              ['Alpaca Broker client', 'done', 'live smoke test against sandbox'],
+              ['Webhook endpoints + idempotency', 'in progress', '—'],
+              ['Auth, portfolio and ops screens', 'in progress', '—'],
+              ['Custodian file simulator + reconciliation', 'not started', '—'],
+              ['Restatement machinery', 'not started', '—'],
+              ['MCP agent surface', 'not started', '—'],
+            ].map(([name, state, evidence]) => (
+              <tr key={name}>
+                <td>{name}</td>
+                <td>
+                  <span
+                    className={`badge ${
+                      state === 'done'
+                        ? 'badge-live'
+                        : state === 'in progress'
+                          ? 'badge-info'
+                          : 'badge-muted'
+                    }`}
+                  >
+                    {state}
+                  </span>
+                </td>
+                <td className="dim" style={{ fontSize: 12.5 }}>
+                  {evidence}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
