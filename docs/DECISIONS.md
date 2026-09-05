@@ -282,3 +282,61 @@ savepoint *after* inserting the unbalanced lines, so rolling back left them in
 the transaction and every subsequent probe tripped over the same poisoned entry.
 Worth recording because it is exactly the class of error the deferred-constraint
 design makes easy to write and hard to notice.
+
+---
+
+## 2026-09-05T18:45Z — Deployed early, before there was anything worth deploying
+
+**Decided.** Get the public URL live at hour two with nothing but the scaffold on
+it, rather than at hour thirty with a finished app.
+
+**Why.** Every webhook in this system needs a public HTTPS endpoint. Until one
+exists, no provider can deliver anything, which means the integration work
+cannot even be tested. Deploying early converts "will it deploy" from an
+end-of-project risk into a solved problem.
+
+That paid for itself immediately. Two things were broken that would have been
+much worse to discover late:
+
+1. **Vercel Authentication was on by default**, returning a 302 to SSO for every
+   request. Every webhook delivery would have bounced off an auth wall, and the
+   deployment would have failed the "a URL we can open" requirement outright.
+   Disabled via the projects API (`ssoProtection: null`).
+2. **The project had `framework: null`.** Vercel had not detected Next.js and
+   was serving the repo as static files, so the root returned a platform 404
+   even though the app built cleanly. Set to `nextjs` and redeployed.
+
+**Live at** https://corgi-assignment.vercel.app — HTTP 200, no auth wall.
+
+---
+
+## 2026-09-05T18:52Z — Alpaca sandbox is asynchronous in three places, and that is useful
+
+**Observed, not decided.** Running the brokerage rail end to end for real
+surfaced three asynchronous steps that a mock would have hidden:
+
+1. **Account approval.** A new account is `SUBMITTED`, moves to `APPROVED`, then
+   `ACTIVE`, taking around 30-40 seconds. Alpaca will not settle funds into an
+   account that is not ACTIVE.
+2. **ACH relationship approval.** The relationship is `QUEUED` before it is
+   `APPROVED`. My first attempt created a transfer against a QUEUED
+   relationship, and it sat in QUEUED indefinitely — the transfer was never
+   going to move, and nothing said so.
+3. **Transfer settlement.** `QUEUED` -> `SENT_TO_CLEARING` -> and then a wait
+   that is longer than ten minutes. Sandbox is simulating real ACH timing.
+
+**Why this is good news.** All three are states the product has to model anyway.
+A customer who has signed up but cannot yet be funded is the KYC pending state.
+A deposit that is in flight but not good funds is exactly what
+`assets:cash:pending_deposit` exists for. The sandbox is handing me the awkward
+cases for free.
+
+**What it costs.** A live demo cannot wait on sandbox ACH. Mitigation is to seed
+demo accounts ahead of time so they are already funded, and to keep the
+in-flight deposit visible as a first-class state rather than something to hide
+behind a spinner. A background watcher is recording the true settlement time so
+the demo script can be planned around a real number rather than a guess.
+
+**Also fixed.** Alpaca rejects SSN area 000, 666 and 900-999. The first smoke
+run used 666 and got a 422. Test identities are now generated inside the valid
+range.
