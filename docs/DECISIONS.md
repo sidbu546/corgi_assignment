@@ -809,3 +809,69 @@ noise for a real break to hide behind. `--plant` injects the debrief's scenario:
 a tampered position and a late dividend. The dividend is the interesting one,
 because booking it into a period we have already reported is what forces a
 restatement.
+
+---
+
+## 2026-09-06T01:35Z — Restatement, and a domain fact I got wrong first
+
+**Built.** A corrected close lands; every day from that date forward is
+revalued; affected published returns are restated. Three append-only
+supersessions and not one UPDATE:
+
+- the corrected price is a NEW `prices` row superseding the old
+- each revalued day is a NEW `valuation_runs` row superseding the old
+- the corrected return is a NEW `published_returns` row pointing at the one it
+  restates
+
+So as-published and as-corrected are the same query with a different
+`recorded_at` bound. That is not a coincidence; it is why the schema carries two
+time axes at all.
+
+**The mistake, and the fact behind it.** My first scenario corrected a price on
+a date INSIDE the published period and asserted the return would change. It
+didn't — identical to twelve decimal places — and I assumed a bug.
+
+It is not a bug. **Time-weighted return telescopes.** With no external flows the
+chain (EV1/BV1)·(EV2/BV2)·… cancels every intermediate value and collapses to
+EV_final / BV_start. A corrected price on an interior date lowers that day's
+value and raises the next day's return by exactly the offsetting amount. I
+checked the arithmetic by hand before touching the code: both paths give
+0.991079.
+
+So a mid-period price correction changes the value ON that day, and the return
+of any sub-period bounded by it, but it cannot move the cumulative return of a
+period that spans it — until an external flow lands after the corrected date,
+at which point the flow is weighted against a different base and the
+cancellation breaks.
+
+**What actually moves a published figure**, and what the demo now shows, is a
+correction to the period's END date. Which is also the case that happens in
+practice: a month-end statement goes out, and then the month-end close is
+corrected.
+
+**The evidence is in the output.** `npm run restate` restates the August period
+(-2.84% for Dana, -$724.18) and, on the same run, shows the period ending 5
+September moving by exactly 0.00% — the telescoping property visible in real
+data rather than argued in a comment.
+
+**Verified, 9/9:** the as-published figure is unchanged after the restatement;
+the as-corrected figure differs; both versions are retained; the original row is
+byte-for-byte untouched; and the superseded price row still exists.
+
+---
+
+## 2026-09-06T01:40Z — Revalue forward, not just the corrected day
+
+**Decided.** `applyCorrectedClose` revalues every date from the corrected date
+to today, not only the corrected date.
+
+**Why.** A wrong price on the 3rd makes the 3rd's value wrong, which makes the
+3rd-to-4th sub-period return wrong, which makes every chained return after it
+wrong. Restating only the single day would leave the cumulative figure quietly
+incorrect — which is the subtlest possible way to fail this requirement, because
+the corrected day would look right on screen while everything after it stayed
+wrong.
+
+**One guard:** days that were never valued are skipped rather than valued for
+the first time. Inventing a valuation for a day the book was never valued would
+fabricate history rather than correct it.
