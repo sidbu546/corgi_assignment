@@ -30,7 +30,8 @@ import Decimal from 'decimal.js';
 import { verifySharedSecretHmac } from '@/lib/webhooks/signatures';
 import { captureHeaders, receiveWebhook } from '@/lib/webhooks/inbox';
 import { recordBuyFill, recordSellFill } from '@/lib/ledger/trades';
-import { price as toPrice, units as toUnits } from '@/lib/money';
+import { postEntry, usd } from '@/lib/ledger/post';
+import { formatCents, price as toPrice, units as toUnits } from '@/lib/money';
 import { marketDateOf, settlementDate } from '@/lib/calendar';
 
 export const runtime = 'nodejs';
@@ -84,21 +85,32 @@ export async function POST(request: Request) {
     /* recorded as unparseable by the inbox */
   }
 
-  // Alpaca's own event id. `execution_id` is unique per fill leg and is the
-  // better key when present, because one order id produces many fills.
+  // Alpaca's own event id. `event_ulid` is present on the status streams and
+  // sorts in time order; `execution_id` is unique per fill leg and is the better
+  // key on the trades stream, because one order produces many fills.
   const providerEventId =
+    (parsed as { event_ulid?: string }).event_ulid ??
     parsed.execution_id ??
     (parsed.event_id !== undefined ? String(parsed.event_id) : null) ??
     `no-event-id-${Date.now()}`;
 
+  const stream = (parsed as { _stream?: string })._stream;
+
   const result = await receiveWebhook({
     provider: 'alpaca',
     providerEventId,
-    eventType: parsed.event ?? 'unknown',
+    eventType:
+      parsed.event ??
+      (stream ? `${stream}.${(parsed as { status_to?: string }).status_to ?? '?'}` : 'unknown'),
     rawBody,
     headers,
     verification,
-    handle: (client) => handleTradeEvent(client, parsed),
+    handle: (client) =>
+      stream === 'transfers'
+        ? handleTransferEvent(client, parsed as unknown as AlpacaTransferEvent)
+        : stream === 'accounts'
+          ? handleAccountEvent(client, parsed as unknown as AlpacaAccountEvent)
+          : handleTradeEvent(client, parsed),
   });
 
   return NextResponse.json(
@@ -234,5 +246,191 @@ async function handleTradeEvent(
   return (
     `${order.side} ${fillUnits.toString()} ${order.symbol} @ ` +
     `${fillPriceDollars.toFixed(4)}, settles ${settlementDate(tradeDate)}${realised}`
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Transfer status: a deposit becomes good funds, or bounces
+// -----------------------------------------------------------------------------
+
+interface AlpacaTransferEvent {
+  transfer_id?: string;
+  account_id?: string;
+  status_from?: string;
+  status_to?: string;
+  at?: string;
+  event_ulid?: string;
+}
+
+/** Alpaca transfer statuses that mean the money is really ours. */
+const SETTLED_STATUSES = new Set(['COMPLETE', 'SETTLED']);
+
+/**
+ * Statuses that mean the money is NOT coming, after we already booked it as
+ * pending. This is the bounced deposit, and it is the case the brief asks
+ * about: what does the customer see when a deposit fails?
+ */
+const FAILED_STATUSES = new Set(['RETURNED', 'CANCELED', 'REJECTED', 'FAILED']);
+
+async function handleTransferEvent(
+  client: PoolClient,
+  event: AlpacaTransferEvent,
+): Promise<string> {
+  const status = (event.status_to ?? '').toUpperCase();
+  if (!event.transfer_id) return `recorded but not acted on: no transfer_id`;
+
+  const { rows } = await client.query<{
+    id: string;
+    customer_id: string;
+    amount_cents: bigint;
+    direction: string;
+  }>(
+    `SELECT id, customer_id, amount_cents, direction::text AS direction
+       FROM cash_transfers WHERE provider_ref = $1`,
+    [event.transfer_id],
+  );
+  const transfer = rows[0];
+
+  if (!transfer) {
+    // Alpaca's sandbox streams carry events for accounts we did not create.
+    // Recording and ignoring them is correct; inventing a transfer would not be.
+    return `recorded but not acted on: transfer ${event.transfer_id} is not ours`;
+  }
+
+  // Has this transfer already reached a terminal state? Out-of-order delivery
+  // is explicitly tolerated, so a late PENDING arriving after COMPLETE must not
+  // undo the settlement.
+  const { rows: existing } = await client.query<{ kind: string }>(
+    `SELECT kind::text AS kind FROM cash_transfer_events
+      WHERE transfer_id = $1::uuid AND kind IN ('settled', 'returned')`,
+    [transfer.id],
+  );
+  if (existing.length > 0) {
+    return (
+      `recorded but not acted on: transfer already ${existing[0].kind}; ` +
+      `a late '${status}' cannot undo a terminal state`
+    );
+  }
+
+  if (SETTLED_STATUSES.has(status)) {
+    const entry = await postEntry(client, {
+      kind: 'deposit.settled',
+      effectiveAt: new Date(event.at ?? Date.now()),
+      source: 'alpaca.events',
+      sourceRef: event.transfer_id,
+      createdBy: 'bridge:alpaca',
+      narrative:
+        `ACH deposit of ${formatCents(transfer.amount_cents)} became good funds ` +
+        `(${event.status_from ?? '?'} -> ${status})`,
+      lines: [
+        usd('assets:cash:pending_deposit', -transfer.amount_cents, {
+          customerId: transfer.customer_id,
+        }),
+        usd('assets:cash:settled', transfer.amount_cents, {
+          customerId: transfer.customer_id,
+          memo: 'now investable and withdrawable',
+        }),
+      ],
+    });
+
+    await client.query(
+      `INSERT INTO cash_transfer_events
+         (transfer_id, kind, provider_event_id, entry_id, effective_at, raw)
+       VALUES ($1::uuid, 'settled', $2, $3::uuid, $4, $5::jsonb)
+       ON CONFLICT (provider_event_id) DO NOTHING`,
+      [
+        transfer.id,
+        event.event_ulid ?? `settle-${event.transfer_id}`,
+        entry.id,
+        new Date(event.at ?? Date.now()),
+        JSON.stringify(event),
+      ],
+    );
+
+    return `deposit ${formatCents(transfer.amount_cents)} settled — now investable`;
+  }
+
+  if (FAILED_STATUSES.has(status)) {
+    // The money is not coming. Reverse the pending deposit.
+    //
+    // Note what this does NOT do: it does not touch settled cash, because the
+    // deposit never reached settled cash. That is the payoff for keeping
+    // pending deposits in their own account — the bounce has an obvious,
+    // exactly-sized thing to reverse, and no position or trade is disturbed.
+    const entry = await postEntry(client, {
+      kind: 'deposit.returned',
+      effectiveAt: new Date(event.at ?? Date.now()),
+      source: 'alpaca.events',
+      sourceRef: event.transfer_id,
+      createdBy: 'bridge:alpaca',
+      narrative:
+        `ACH deposit of ${formatCents(transfer.amount_cents)} was ${status.toLowerCase()} ` +
+        `by the rail and never became good funds`,
+      lines: [
+        usd('assets:cash:pending_deposit', -transfer.amount_cents, {
+          customerId: transfer.customer_id,
+          memo: `reversed on ${status}`,
+        }),
+        usd('equity:external:bank', transfer.amount_cents),
+      ],
+    });
+
+    await client.query(
+      `INSERT INTO cash_transfer_events
+         (transfer_id, kind, return_code, provider_event_id, entry_id, effective_at, raw)
+       VALUES ($1::uuid, 'returned', $2, $3, $4::uuid, $5, $6::jsonb)
+       ON CONFLICT (provider_event_id) DO NOTHING`,
+      [
+        transfer.id,
+        status,
+        event.event_ulid ?? `return-${event.transfer_id}`,
+        entry.id,
+        new Date(event.at ?? Date.now()),
+        JSON.stringify(event),
+      ],
+    );
+
+    return `deposit ${formatCents(transfer.amount_cents)} ${status} — pending balance reversed`;
+  }
+
+  return `recorded: transfer ${event.transfer_id} ${event.status_from ?? '?'} -> ${status}`;
+}
+
+// -----------------------------------------------------------------------------
+// Account status: whether the customer may transact at the broker
+// -----------------------------------------------------------------------------
+
+interface AlpacaAccountEvent {
+  account_id?: string;
+  account_number?: string;
+  status_from?: string;
+  status_to?: string;
+  account_blocked?: boolean;
+  trading_blocked?: boolean;
+  at?: string;
+}
+
+async function handleAccountEvent(
+  client: PoolClient,
+  event: AlpacaAccountEvent,
+): Promise<string> {
+  if (!event.account_id) return 'recorded but not acted on: no account_id';
+
+  const { rows } = await client.query<{ id: string; legal_name: string }>(
+    `SELECT id, legal_name FROM customers WHERE alpaca_account_id = $1`,
+    [event.account_id],
+  );
+  const customer = rows[0];
+  if (!customer) {
+    return `recorded but not acted on: account ${event.account_id} is not ours`;
+  }
+
+  // Deliberately informational. The broker's account status is NOT our KYC
+  // gate — Persona decides that, and collapsing the two would mean a change at
+  // the broker could silently grant or revoke a customer's ability to transact.
+  return (
+    `${customer.legal_name}: broker account ${event.status_from ?? '?'} -> ` +
+    `${event.status_to ?? '?'}` +
+    (event.trading_blocked ? ' (trading blocked)' : '')
   );
 }

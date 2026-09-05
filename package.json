@@ -14,6 +14,7 @@
     "value": "tsx scripts/value-history.ts",
     "recon": "tsx scripts/run-recon.ts",
     "restate": "tsx scripts/restate.ts",
+    "bridge": "tsx scripts/alpaca-bridge.ts",
     "inspect": "tsx scripts/inspect.ts",
     "test": "tsx --test \"src/**/*.test.ts\""
   },

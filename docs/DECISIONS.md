@@ -875,3 +875,60 @@ wrong.
 **One guard:** days that were never valued are skipped rather than valued for
 the first time. Inventing a valuation for a day the book was never valued would
 fabricate history rather than correct it.
+
+---
+
+## 2026-09-06T02:10Z — Polling removed: the bridge consumes three event streams
+
+**Prompted by a good question:** "is the watcher polling?" It was — a throwaway
+diagnostic in /tmp, never tracked by git, whose only job was to measure how long
+sandbox ACH actually takes so the demo could be planned on a real number rather
+than a guess. But the question exposed a genuine gap: **transfer settlement had
+no event path at all**, so the only way the system would ever learn a deposit
+had cleared was by asking.
+
+"Polling is a fallback strategy, not the design." That was true of trades and
+not true of transfers. Now it is true of both.
+
+**What I found.** Alpaca exposes three SSE streams, all of which work and carry
+real events — I checked rather than assumed:
+
+- `/v2beta1/events/trades` — fills and partial fills
+- `/v1/events/transfers/status` — ACH transitions, e.g.
+  `{"status_from":"QUEUED","status_to":"APPROVED",...}`
+- `/v1/events/accounts/status` — account and KYC status at the broker
+
+**Built.** `scripts/alpaca-bridge.ts` consumes all three, signs each event with
+the shared secret and POSTs it into the same endpoint the real webhooks use.
+Resumption is by `event_ulid`, which sorts lexicographically in time order, so a
+dropped connection loses nothing — and resuming slightly too early is harmless
+because the consumer is idempotent.
+
+**Proven against the deployed system, not asserted:**
+
+- restarting the bridge re-delivered every prior event and every one came back
+  `duplicate — Delivered 2 times, acted on once`
+- our own deposit was matched:
+  `recorded: transfer 5c8d21d6... -> QUEUED`
+- events for accounts and transfers created by smoke scripts, which were never
+  linked to a customer, are recorded and explicitly **not acted on** rather than
+  being invented into positions
+
+**Two handlers added, and the second is the interesting one.**
+
+`COMPLETE` moves `assets:cash:pending_deposit` into `assets:cash:settled` —
+the money becomes investable and withdrawable.
+
+`RETURNED` / `CANCELED` / `REJECTED` reverses the pending deposit. This is the
+bounced deposit the brief asks about, and note what it does NOT touch: settled
+cash, positions, or trades. That is the payoff for keeping deposits in flight in
+their own account — the bounce has an exactly-sized thing to reverse and nothing
+else is disturbed.
+
+Both are guarded against out-of-order delivery: once a transfer has reached a
+terminal state, a late `PENDING` cannot undo it.
+
+**One boundary held deliberately.** The broker's account status is recorded but
+is NOT our KYC gate. Persona decides whether a customer may transact. Collapsing
+the two would mean a status change at the broker could silently grant or revoke
+that right.
