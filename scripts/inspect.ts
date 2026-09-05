@@ -30,7 +30,7 @@ async function main() {
     const customers = await q<{ id: string; legal_name: string; email: string; kyc: string }>(
       `SELECT c.id, c.legal_name, c.email,
               (SELECT status FROM kyc_events k
-                WHERE k.customer_id = c.id ORDER BY recorded_at DESC, id DESC LIMIT 1) AS kyc
+                WHERE k.customer_id = c.id ORDER BY effective_at DESC, recorded_at DESC, id DESC LIMIT 1) AS kyc
          FROM customers c ORDER BY c.created_at`,
     );
     for (const c of customers) {

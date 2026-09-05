@@ -35,12 +35,14 @@ interface PersonaEvent {
     id?: string;
     attributes?: {
       name?: string;
+      'created-at'?: string;
       payload?: {
         data?: {
           id?: string;
           attributes?: {
             'reference-id'?: string;
             status?: string;
+            'updated-at'?: string;
           };
         };
       };
@@ -119,16 +121,30 @@ async function handlePersonaEvent(
   // Append-only: a new event row, never an update. The history of states is the
   // artefact an auditor wants, and "pending then declined then approved on
   // appeal" is a real sequence that an overwritten column would erase.
+  //
+  // effective_at is PERSONA'S timestamp, not ours. This matters more than it
+  // looks: Persona genuinely delivers out of order — a real run delivered
+  // `inquiry.declined` before `inquiry.created`, and ordering the history by
+  // when we happened to receive each event showed a declined customer as merely
+  // pending. Ordering by the provider's own event time is what makes
+  // out-of-order delivery tolerable rather than merely survivable.
+  const eventAt =
+    event.data?.attributes?.['created-at'] ??
+    inquiry?.attributes?.['updated-at'] ??
+    null;
+
   await client.query(
     `INSERT INTO kyc_events
        (customer_id, status, provider, provider_ref, reason, raw, effective_at)
-     VALUES ($1::uuid, $2, 'persona', $3, $4, $5::jsonb, now())`,
+     VALUES ($1::uuid, $2, 'persona', $3, $4, $5::jsonb,
+             coalesce($6::timestamptz, now()))`,
     [
       customer.id,
       status,
       inquiryId,
       status === 'rejected' ? `Persona reported ${eventType}` : null,
       JSON.stringify(event),
+      eventAt,
     ],
   );
 

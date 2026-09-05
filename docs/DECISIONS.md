@@ -932,3 +932,49 @@ terminal state, a late `PENDING` cannot undo it.
 is NOT our KYC gate. Persona decides whether a customer may transact. Collapsing
 the two would mean a status change at the broker could silently grant or revoke
 that right.
+
+---
+
+## 2026-09-06T02:55Z — Persona webhooks live, and a real out-of-order bug they exposed
+
+**Live.** Persona now delivers signed webhooks to the deployed URL, and both
+paths are exercised by `scripts/smoke-kyc.ts`:
+
+```
+inquiry.created    signature=VERIFIED  -> Priya Raman: KYC -> pending
+inquiry.approved   signature=VERIFIED  -> Priya Raman: KYC -> approved
+inquiry.declined   signature=VERIFIED  -> Alex Okafor: KYC -> rejected
+```
+
+That makes **all three mandatory slots genuinely live**, and two of the three
+(Persona, Plaid) on true webhooks rather than a bridge.
+
+**One setup detail worth recording**, because it cost a confusing round trip:
+the webhook was registered in the Persona dashboard with the correct URL but its
+status was `disabled`, so nothing was delivered and nothing errored — the
+quietest possible failure. I enabled it through Persona's API rather than
+sending the user back to the dashboard. Worth knowing that a registered webhook
+is not necessarily an enabled one.
+
+**THE REAL FIND: Persona delivers out of order.** A live run delivered
+`inquiry.declined` BEFORE `inquiry.created`. My "current KYC status" query
+ordered by `recorded_at DESC, id DESC` — our receipt order — so the last row
+written was `pending`, and **a declined customer displayed as merely pending**.
+
+That is a gate failing open. Not a cosmetic ordering issue: the KYC status is
+what `assertMayTransact` consults before letting money move, so out-of-order
+delivery could have let a rejected identity fund an account.
+
+**Fix.** `effective_at` is now the PROVIDER'S event timestamp, not ours, and
+every "latest status" query orders by `effective_at DESC, recorded_at DESC,
+id DESC` — five call sites: the onboarding gate, the portfolio page, the ops
+console, and two scripts.
+
+This is what "out-of-order delivery tolerated" actually requires. Idempotency
+alone does not give it to you: each event was processed exactly once, correctly,
+and the *aggregate* was still wrong. Tolerating out-of-order delivery means the
+derived state must not depend on arrival order at all — which means ordering by
+the provider's clock, not ours.
+
+I would not have found this by reading the code. Persona simply delivered them
+in that order, and the test printed the history.

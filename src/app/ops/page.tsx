@@ -23,7 +23,7 @@ export default async function OpsPage() {
       `SELECT c.id, c.legal_name, c.email,
               coalesce((SELECT status::text FROM kyc_events k
                          WHERE k.customer_id = c.id
-                         ORDER BY k.recorded_at DESC, k.id DESC LIMIT 1),
+                         ORDER BY k.effective_at DESC, k.recorded_at DESC, k.id DESC LIMIT 1),
                        'not_started') AS kyc,
               v.total_value_cents      AS total,
               v.positions_value_cents  AS positions,

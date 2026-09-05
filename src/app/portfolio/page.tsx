@@ -17,7 +17,7 @@ export default async function PortfolioPage() {
     const { rows: kyc } = await client.query<{ status: string; reason: string | null }>(
       `SELECT status, reason FROM kyc_events
         WHERE customer_id = $1::uuid
-        ORDER BY recorded_at DESC, id DESC LIMIT 1`,
+        ORDER BY effective_at DESC, recorded_at DESC, id DESC LIMIT 1`,
       [session.customerId],
     );
 
