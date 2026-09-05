@@ -201,3 +201,84 @@ elsewhere in this system. Everything is now `pg` plus SQL I wrote.
 that gets quietly rewritten when a decision changes is worth nothing, which is
 the same argument the ledger makes about corrections: reversal and re-book,
 never an edit.
+
+---
+
+## 2026-09-05T18:20Z — Alpaca Broker API sandbox, not Trading API paper
+
+**Decided.** Broker API sandbox (`broker-api.sandbox.alpaca.markets`) as the
+brokerage/custody integration, with Legacy key/secret credentials over HTTP
+Basic auth.
+
+**Why.** Two reasons, and the first one is a hard requirement rather than a
+preference.
+
+The brief demands fills arriving "by webhook, not just polling". The Trading API
+only offers a **websocket stream** for trade updates, which needs a long-lived
+process — and this deploys to Vercel serverless, which cannot hold a socket
+open. Satisfying the requirement on Trading API would have meant running a
+separate always-on listener that forwards stream events into our own webhook
+endpoint: a moving part that exists solely to work around the wrong provider
+choice, and one more thing to fail live.
+
+Second, Broker API gives **per-customer accounts** rather than one omnibus
+paper account shared by every demo customer. A retail investing product where
+each customer has their own brokerage account is the honest model, and it makes
+reconciliation against the custodian mean something.
+
+**Credential type.** Chose Legacy (key id + secret, Basic auth) over the newer
+Client Secret credential, which is an OAuth2 client-credentials flow requiring a
+token exchange, token caching and refresh-on-expiry. For a 48-hour build that is
+three failure modes bought for no benefit.
+
+**Assumed.** Alpaca sandbox accounts can be created without real PII, using
+their documented test identities. If that turns out to be wrong I will fall back
+to a single omnibus account and say so plainly in the README rather than
+pretending each customer has their own.
+
+---
+
+## 2026-09-05T18:26Z — All three mandatory live integrations verified before building on them
+
+**Decided.** Before writing a line of provider client code, hit each sandbox
+with a real request and confirm a 200.
+
+- **Alpaca Broker sandbox** — `GET /v1/accounts` 200, `GET /v1/assets/AAPL`
+  returns the real instrument with `fractionable: true` (which matters: the
+  model portfolios need fractional shares to hit target weights on small
+  balances).
+- **Plaid sandbox** — `POST /institutions/get` 200 with real institution data.
+- **Persona sandbox** — `GET /api/v1/inquiries` 200.
+
+**Why bother.** Because "integration reality" is 20 points and the failure mode
+it is guarding against is a system that looks wired but was only ever tested
+against a mock. Confirming credentials work at hour two costs ten minutes;
+discovering at hour forty that a key was for the wrong environment costs the
+trial. Build outside-in against reality, starting with proof that reality
+answers.
+
+---
+
+## 2026-09-05T18:31Z — The invariants are proven, not asserted
+
+**Decided.** `npm run verify` attempts every forbidden operation against the
+real database and requires Postgres to refuse each one. 20 checks: unbalanced
+entries, entries balanced in one commodity but not the other, single-legged
+entries, USD lines carrying units, instrument lines carrying cents, house
+accounts carrying a customer id, customer accounts missing one, zero-quantity
+lines, UPDATE/DELETE/TRUNCATE on journal rows, UPDATE on prices and tax lots,
+and self-approval.
+
+It runs inside a transaction that is rolled back, with a savepoint around each
+probe, so it can be run against the deployed database at any time — including
+in front of the panel.
+
+**Why.** A README that says "money rows are append-only" is a promise. This is
+evidence, and it converts the most likely hostile question in the debrief
+("prove it") into a command I can run while they watch.
+
+**A real bug this caught in the harness itself.** My first version created the
+savepoint *after* inserting the unbalanced lines, so rolling back left them in
+the transaction and every subsequent probe tripped over the same poisoned entry.
+Worth recording because it is exactly the class of error the deferred-constraint
+design makes easy to write and hard to notice.
