@@ -671,3 +671,45 @@ previous close is carried forward and its age in days is stored on the row and
 rendered next to the price. 170 of 548 position valuations in the seeded history
 are on a carried-forward price — mostly weekends, plus the one close the
 simulator withholds on purpose.
+
+---
+
+## 2026-09-05T23:05Z — Open banking: Plaid verified end to end, one dashboard toggle outstanding
+
+**Built and proven against the real sandbox:** link token -> public token ->
+access token -> accounts + identity -> name match -> processor token.
+
+Steps 1-5 all return real data from Plaid: "First Platypus Bank", a checking and
+a savings account, and the account owner's name.
+
+**The check I did not skip.** Before any money moves, the name on the bank
+account is compared to the name on file. The brief asks that the account we pay
+into belongs to the claimant, and funding an investment account from a
+stranger's bank is how laundering works. The comparison is forgiving on form and
+strict on substance: case, punctuation, middle names and name order are
+normalised away, because "Dana R. Whitfield" and "WHITFIELD DANA" are the same
+person and rejecting them just trains an ops team to click override. A different
+surname is not.
+
+It returns **three** values, not two: match, mismatch, or `null` when Plaid
+reported no owner names at all. Unknown is not the same as verified, and
+recording it as a pass would be a lie.
+
+**Both outcomes are reachable on purpose.** Plaid's default sandbox identity is
+always "Alberta Bobbeth Charleson", so every demo customer would fail the check
+and the happy path would be unreachable. Plaid's custom-user mechanism lets the
+sandbox present a chosen identity, so the demo shows the same flow twice: a
+customer funding their own account (match, proceeds) and a customer funding from
+someone else's (mismatch, blocked).
+
+Worth recording for anyone who touches this: the custom-user config accepts only
+`override_accounts` at the top level. Adding `version` or `seed` makes Plaid
+reject the whole thing with `INVALID_CREDENTIALS`, which is a badly misleading
+error for what is a schema problem.
+
+**Outstanding, and not something I can fix in code:** the Plaid keys are not
+enabled for the Alpaca processor integration —
+`INVALID_PRODUCT — The provided API keys are not enabled for the Alpaca
+integration`. It is a toggle in the Plaid dashboard under
+Developers -> Integrations. Until it is flipped, the processor token cannot be
+minted and the ACH relationship cannot be created from Plaid.
