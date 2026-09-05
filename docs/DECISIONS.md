@@ -512,3 +512,78 @@ forward, which is where the restatement demo operates anyway.
 $739 a share. The ledger balanced perfectly throughout, which is the point:
 internal consistency is not the same as being right. Rewritten as plain
 integers with the dollar value in a comment beside each.
+
+---
+
+## 2026-09-05T21:40Z — Webhooks: one pipeline, three transports, honestly labelled
+
+**Decided.** Every inbound event — Persona's real webhooks, Plaid's real
+webhooks, and Alpaca's events — flows through one `receiveWebhook` pipeline with
+one dedupe key and one replay story.
+
+**The Alpaca problem, and what I did about it.** Alpaca's Broker sandbox offers
+no webhook registration. I verified rather than assumed: `/v1/webhooks`,
+`/v2/webhooks`, `/v1/events/subscriptions` and
+`/v1/events/trades/subscriptions` all return 404, while `/v2beta1/events/trades`
+opens an SSE stream and greets with `: welcome to the Alpaca events`. Alpaca's
+transport for trade updates is server-sent events.
+
+Vercel's serverless functions cannot hold a stream open, so a bridge process
+consumes the SSE stream and POSTs each event into our own endpoint, signed with
+a shared secret.
+
+**This is labelled as a bridge, not as a webhook, everywhere it appears** — the
+README, the integrations page and the webhook inbox page all say "SSE via
+bridge". Calling it a webhook would be exactly the kind of quiet
+misrepresentation that is an automatic fail. What is true, and what the label
+claims, is that the transport differs while the guarantees do not: same
+idempotency, same signature verification, same replay behaviour, because it is
+the same consumer.
+
+**Signature schemes, per provider.** Persona: HMAC-SHA256 over `t.body` with a
+5-minute window. Plaid: ES256 JWT, key fetched by `kid`, algorithm pinned to
+ES256 (refusing `alg: none` downgrades), and `request_body_sha256` compared
+against the received body — verifying the JWT alone would let a valid token be
+replayed against any body. Bridge: HMAC-SHA256 over `timestamp.body`.
+
+All verification is against the RAW body. Parsing and re-serialising reorders
+keys and changes the bytes that were signed.
+
+---
+
+## 2026-09-05T21:55Z — A vulnerability my own replay test found
+
+**The bug.** `receiveWebhook` claimed the idempotency key BEFORE verifying the
+signature, and `webhook_deliveries` had a plain `UNIQUE (provider,
+provider_event_id)` across all rows.
+
+Therefore: anyone who could guess or observe an event id could POST an
+**unsigned garbage body** under that id, claim the key, and every subsequent
+genuine delivery of that event would be recorded as a "duplicate" and never
+processed.
+
+**An unauthenticated request could permanently suppress a real fill.** The
+webhook inbox would show the event as handled. The trade would simply never
+reach the ledger. Nothing would look wrong anywhere.
+
+**How it surfaced.** Not by inspection — by `scripts/replay-test.ts`, which
+delivers a tampered body and expects `rejected_signature`. It got `duplicate`
+instead. I had written that assertion expecting to prove signature enforcement,
+and it caught an ordering flaw I had not thought about.
+
+**The fix, in two halves.**
+1. Verify the signature *before* claiming the key. Invalid deliveries are still
+   recorded — attacks should be visible — but never reach the conflict path.
+2. Migration 0005 replaces the unique constraint with a **partial** unique index
+   `WHERE signature_valid`, so only authenticated deliveries occupy the dedupe
+   namespace. Defence in depth: even if the application ordering regressed, an
+   unverified row could no longer shadow a real one.
+
+**The generalisable lesson.** An idempotency key is a form of authority.
+Allowing an unauthenticated caller to write into that namespace is the same
+class of mistake as allowing them to write to the ledger. I would not have
+found this by reading the code.
+
+**Proof, against the deployed system:** `npm run replay-test` — 6/6, including
+processed → duplicate → duplicate, tampered-body rejected, hour-old signature
+rejected, and every response a 200 so no provider retries into a wall.

@@ -10,12 +10,14 @@
     "migrate": "tsx db/migrate.ts",
     "seed": "tsx db/seed.ts",
     "verify": "tsx db/verify-invariants.ts",
+    "replay-test": "tsx scripts/replay-test.ts",
     "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "date-fns": "^4.4.0",
     "decimal.js": "^10.6.0",
     "dotenv": "^17.4.2",
+    "jose": "^6.2.12",
     "next": "16.3.4",
     "pg": "^8.23.0",
     "plaid": "^47.0.0",

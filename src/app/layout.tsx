@@ -13,6 +13,7 @@ const NAV = [
   { href: '/invariants', label: 'Invariants' },
   { href: '/integrations', label: 'Integrations' },
   { href: '/ledger', label: 'Ledger' },
+  { href: '/webhooks', label: 'Webhooks' },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
