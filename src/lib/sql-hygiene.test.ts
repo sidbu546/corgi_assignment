@@ -62,13 +62,34 @@ async function* walk(dir: string): AsyncGenerator<string> {
   }
 }
 
-test('every sum() over a money column is cast to ::bigint in the SQL', async () => {
-  // sum( ... money_column ... )  not immediately followed by ::bigint
-  const pattern = new RegExp(
-    String.raw`\bsum\s*\(\s*[^()]*?\b(${MONEY_COLUMNS.join('|')})\b[^()]*?\)(?!\s*::\s*bigint)`,
-    'gi',
-  );
+/**
+ * Is this `sum(...)` cast to bigint?
+ *
+ * The cast may be applied directly — `sum(x)::bigint` — or to an enclosing
+ * expression — `coalesce(sum(x), 0)::bigint`. Both are correct; both yield a
+ * bigint to the driver.
+ *
+ * An earlier version of this check demanded `::bigint` IMMEDIATELY after the
+ * closing paren of the sum, and so flagged two correct `coalesce(sum(...), 0)
+ * ::bigint` lines as violations. That is worth fixing rather than working
+ * around: a check that reports false positives gets ignored, and then it is
+ * not protecting anything on the day it is right. Same lesson as the
+ * reconciliation screen.
+ *
+ * So: scan forward from the sum's closing paren, allowing only closing parens,
+ * whitespace and commas-with-literals (the `, 0` of a coalesce), and accept the
+ * line if a `::bigint` appears before anything else meaningful.
+ */
+function sumIsCast(line: string, sumEnd: number): boolean {
+  const rest = line.slice(sumEnd);
+  // Allow: closing parens, whitespace, and simple literal arguments such as
+  // ", 0" that belong to a wrapping coalesce.
+  const match = /^(?:\s*,\s*[\w'".]+|\s*\)|\s)*::\s*bigint/i.exec(rest);
+  return match !== null;
+}
 
+test('every sum() over a money column is cast to ::bigint in the SQL', async () => {
+  const moneyColumns = MONEY_COLUMNS.join('|');
   const offenders: string[] = [];
 
   for (const root of ROOTS) {
@@ -80,14 +101,22 @@ test('every sum() over a money column is cast to ::bigint in the SQL', async () 
       const lines = source.split('\n');
 
       lines.forEach((line, i) => {
-        pattern.lastIndex = 0;
         // A HAVING clause compares inside SQL and never crosses into JS, so it
         // does not need the cast. Everything in a SELECT list does.
         if (/\bHAVING\b/i.test(line)) return;
-        if (pattern.test(line)) {
-          offenders.push(
-            `${path.relative(process.cwd(), file)}:${i + 1}  ${line.trim()}`,
-          );
+
+        const finder = new RegExp(
+          String.raw`\bsum\s*\(\s*[^()]*?\b(?:${moneyColumns})\b[^()]*?\)`,
+          'gi',
+        );
+        let match: RegExpExecArray | null;
+        while ((match = finder.exec(line)) !== null) {
+          if (!sumIsCast(line, match.index + match[0].length)) {
+            offenders.push(
+              `${path.relative(process.cwd(), file)}:${i + 1}  ${line.trim()}`,
+            );
+            break;
+          }
         }
       });
     }
