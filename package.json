@@ -6,13 +6,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "migrate": "tsx db/migrate.ts",
+    "seed": "tsx db/seed.ts",
+    "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "date-fns": "^4.4.0",
     "decimal.js": "^10.6.0",
     "dotenv": "^17.4.2",
-    "drizzle-orm": "^0.45.2",
     "next": "16.3.4",
     "pg": "^8.23.0",
     "plaid": "^47.0.0",
@@ -26,7 +28,6 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
     "tailwindcss": "^4",

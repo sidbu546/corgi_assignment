@@ -183,3 +183,21 @@ Both are the same query with a different bound. The restatement machinery is
 then not a special subsystem, it is a parameter. The valuation runs and published
 returns follow the same pattern: a restated day inserts a new run for the same
 `as_of_date`, and the original stays queryable forever.
+
+---
+
+## 2026-09-05T17:34Z — Correction: dropped Drizzle entirely
+
+**Corrects the 16:52Z stack entry**, which said Drizzle would be kept "for
+convenience reads elsewhere". It has been removed from the dependency tree.
+
+**Why.** Once the ledger was written in raw SQL, the only thing Drizzle was
+buying was typed reads on a handful of lookup tables — and it cost a schema
+definition that would have to be kept in sync with the migrations by hand. Two
+descriptions of one schema is exactly the drift problem I am trying to avoid
+elsewhere in this system. Everything is now `pg` plus SQL I wrote.
+
+**Noted rather than edited.** The original entry stays as written. A decision log
+that gets quietly rewritten when a decision changes is worth nothing, which is
+the same argument the ledger makes about corrections: reversal and re-book,
+never an edit.
