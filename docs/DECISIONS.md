@@ -1,0 +1,185 @@
+# Decision log
+
+Append-only. Newest at the bottom. Every entry is written when the decision is
+made, not reconstructed afterwards — the git history should corroborate the
+timestamps.
+
+Format: what I decided, why, what I assumed, what it costs me.
+
+---
+
+## 2026-09-05T16:48Z — Track 2, investment app
+
+**Decided.** Track 2 over Track 1.
+
+**Why.** Two reasons, one of them honest about incentives. First, the problem is
+richer: the units-vs-money dimension split, time-weighted return under external
+flows, FIFO lot consumption, and the restatement machinery are genuine
+engineering problems with provable invariants, rather than careful bookkeeping.
+Second, Track 1's brief says outright that it is Corgi's day job and the panel
+has built every piece of it. That is the higher-ceiling choice and I considered
+it seriously, but with 48 hours the variance is brutal: every shortcut is
+visible to people who know exactly where to look.
+
+**Cost.** Track 2 mandates three live integrations (Alpaca, KYC, Plaid) against
+Track 1's two, and adds a dependency I do not control: US market hours gate real
+fills. I am accepting more integration surface in exchange for a more
+interesting core.
+
+---
+
+## 2026-09-05T16:52Z — Stack
+
+**Decided.** Next.js 15 (App Router, TypeScript) on Vercel, Postgres on Neon,
+`pg` with hand-written SQL for everything that touches money, Drizzle only for
+convenience reads elsewhere.
+
+**Why.** One deployment artefact serves the UI, the JSON API, the webhook
+endpoints and the MCP surface, which matters when the clock is the binding
+constraint. Vercel gives a public HTTPS URL immediately, and webhooks need a
+public URL from hour one, not hour thirty.
+
+Hand-written SQL for the ledger is a deliberate anti-convenience choice. One of
+the automatic fails is "code you cannot explain line by line", and an ORM's
+generated SQL is exactly the code you cannot explain under questioning. The
+ledger is ~200 lines of SQL I wrote and can defend.
+
+**Assumed.** Free tiers throughout. No spend, per the rules.
+
+---
+
+## 2026-09-05T16:55Z — The ledger is multi-commodity, not two ledgers
+
+**Decided.** One journal. Every line carries a `commodity` (`'USD'` or a ticker)
+and exactly one of `amount_cents bigint` or `units numeric(28,6)`, enforced by a
+CHECK constraint. An entry must balance to zero **independently per commodity**,
+enforced by a DEFERRED constraint trigger at COMMIT.
+
+**Why.** The gauntlet's first item is that units and money are different
+dimensions and mixing them is the classic day-one bug. The way to not make that
+bug is to make it structurally unrepresentable: there is no column in this schema
+that can hold "value", and no code path that can add cents to units, because
+they are different columns with different types and a constraint that says only
+one may be populated.
+
+The alternative — two parallel ledgers, one for cash and one for stock — was
+rejected because it cannot express a single atomic trade. A buy that debits
+units and credits cash has to be *one* entry that balances, or it is two
+bookkeeping records that can drift apart.
+
+**The trick that makes it work.** The far leg of every trade is a house account,
+`equity:external:market`, which is allowed to hold both dimensions. On a buy it
+holds `-10 AAPL` and `+150,100 USD` on the same entry. Each commodity sums to
+zero. The market gave us shares and took dollars, and the ledger says so
+literally.
+
+**Cost.** Slightly unusual to anyone expecting classic debit/credit columns. I
+have documented the sign convention (assets and expenses positive, everything
+else negative) in one place and it is relied on everywhere.
+
+---
+
+## 2026-09-05T16:58Z — Unrealised gain is not a ledger entry
+
+**Decided.** Positions are carried in two accounts: `assets:positions` (units
+only) and `assets:positions:cost` (cents only). Market value is **never**
+stored in the ledger. Unrealised gain is computed at read time as
+`(units x price) - cost`.
+
+**Why.** Nothing has happened. A price moving is not a transaction, and booking
+it as one would mean the ledger changes when nobody did anything, which destroys
+the property that the ledger is a record of events. Realised gain, by contrast,
+*is* an event, and it falls out of the balance requirement on a sell: proceeds
+minus the basis of the consumed lots is whatever makes the entry sum to zero.
+
+**Consequence I like.** I cannot accidentally double-count a gain, because there
+is exactly one place it can come from.
+
+---
+
+## 2026-09-05T17:01Z — Commissions capitalise into cost basis
+
+**Decided.** Trade commissions increase the cost basis of the lot rather than
+being expensed to `expenses:fees`.
+
+**Why.** That is the actual US tax treatment, and the tax export is a stated
+deliverable. A commission expensed separately produces a basis that is wrong on
+a 1099-B, which is the kind of error that is invisible in a demo and expensive in
+production. `expenses:fees` remains for advisory and platform fees, which are
+genuinely expenses.
+
+---
+
+## 2026-09-05T17:04Z — Cash is three buckets, not one
+
+**Decided.** `assets:cash:settled`, `assets:cash:unsettled_proceeds`,
+`assets:cash:pending_deposit`.
+
+**Why.** T+1 settlement means settled and available cash diverge and re-converge,
+and the gauntlet says to model the gap rather than hide it. The rule I am
+implementing, which is the real US rule rather than a simplification:
+
+- **Withdrawable** = settled cash only.
+- **Investable** = settled + unsettled sale proceeds. You may buy with unsettled
+  proceeds; withdrawing them is free-riding.
+- **Deposits in flight are neither** until they are good funds.
+
+That third bucket is also what makes the bounced-deposit scenario expressible:
+the reversal has an account to come out of.
+
+---
+
+## 2026-09-05T17:07Z — Append-only is enforced by Postgres, twice
+
+**Decided.** `BEFORE UPDATE OR DELETE` triggers that `RAISE EXCEPTION` on every
+money table, plus `BEFORE TRUNCATE` statement triggers, plus (once the app role
+exists) `REVOKE UPDATE, DELETE` from that role.
+
+**Why.** "UPDATE or DELETE on money rows, anywhere, ever" is an automatic fail.
+An immutability guarantee that lives in application code is not a guarantee, it
+is a convention — one careless migration or one psql session away from being
+false. Triggers fire for the table owner and for a superuser, so the property
+holds regardless of who is connected.
+
+TRUNCATE gets its own trigger because it bypasses row-level triggers entirely,
+which is the gap most people leave open.
+
+**Deliberate.** I intend to demonstrate this in the debrief by trying an UPDATE
+live and letting Postgres refuse, rather than asserting it in a README.
+
+---
+
+## 2026-09-05T17:10Z — No status columns, no positions table
+
+**Decided.** Orders have no `status` column. There is no `positions` table and no
+`customers.balance`. Status is the latest `order_events` row; positions and
+balances are folds over `journal_lines`.
+
+**Why.** A projection that can drift from the ledger is a bug waiting for an
+audit. If the balance on the screen is computed from the entries every time, then
+"every balance on every screen is derivable from those entries" is true by
+construction rather than by discipline — including as it stood on any past date,
+which is the same query with a `recorded_at <=` predicate.
+
+**Cost.** Slower reads. If this becomes a problem I will add materialised views
+that are *derived*, clearly labelled as caches, and rebuildable from the journal
+— not a second source of truth.
+
+---
+
+## 2026-09-05T17:13Z — Prices are superseded, never corrected in place
+
+**Decided.** A corrected closing price inserts a **new** `prices` row for the
+same `(symbol, price_date)` with a later `recorded_at` and a `supersedes_id`
+pointer. Nothing is updated.
+
+**Why.** This one decision is what makes the whole restatement requirement
+tractable:
+
+- **as published on date T** = latest price row where `recorded_at <= T`
+- **as corrected now** = latest price row, full stop
+
+Both are the same query with a different bound. The restatement machinery is
+then not a special subsystem, it is a parameter. The valuation runs and published
+returns follow the same pattern: a restated day inserts a new run for the same
+`as_of_date`, and the original stays queryable forever.
