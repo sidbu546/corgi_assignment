@@ -12,6 +12,7 @@
  * entire point. It is exposed both as `npm run verify` and as a page.
  */
 
+import '../pg-types';
 import { Client } from 'pg';
 
 export interface InvariantCheck {
@@ -276,7 +277,7 @@ export async function runInvariants(connectionString?: string): Promise<Invarian
 
     const { rows: totals } = await client.query<{
       commodity: string; cents: string | null; units: string | null;
-    }>(`SELECT commodity, sum(amount_cents) AS cents, sum(units) AS units
+    }>(`SELECT commodity, sum(amount_cents)::bigint AS cents, sum(units) AS units
           FROM journal_lines GROUP BY commodity ORDER BY commodity`);
 
     for (const row of totals) {

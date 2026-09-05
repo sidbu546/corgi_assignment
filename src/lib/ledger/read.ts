@@ -68,10 +68,14 @@ export async function accountBalances(
     cents: bigint | null;
     units: string | null;
   }>(
+    // sum() over bigint returns NUMERIC in Postgres, which our type parser
+    // leaves as a string. Casting back to bigint here means cents arrive as a
+    // native bigint and can never transit a float or a string concatenation.
+    // This bug was latent and invisible while the table was empty.
     `SELECT l.account_code,
             l.commodity,
-            sum(l.amount_cents) AS cents,
-            sum(l.units)        AS units
+            sum(l.amount_cents)::bigint AS cents,
+            sum(l.units)                AS units
        FROM journal_lines l
        JOIN journal_entries e ON e.id = l.entry_id
       WHERE e.effective_at <= $1
@@ -186,7 +190,7 @@ export async function positions(
             ) u
        LEFT JOIN (
               SELECT l.related_symbol AS symbol,
-                     sum(l.amount_cents) AS cost
+                     sum(l.amount_cents)::bigint AS cost
                 FROM journal_lines l
                 JOIN journal_entries e ON e.id = l.entry_id
                WHERE l.account_code = 'assets:positions:cost'

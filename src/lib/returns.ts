@@ -159,8 +159,10 @@ export async function externalFlowsByDay(
   knownAt?: Date,
 ): Promise<Map<string, Cents>> {
   const rows = await query<{ day: string; flow: bigint }>(
+    // ::bigint because sum() over bigint yields numeric, which our parser
+    // leaves as a string.
     `SELECT to_char(e.effective_at AT TIME ZONE 'America/New_York', 'YYYY-MM-DD') AS day,
-            sum(l.amount_cents) AS flow
+            sum(l.amount_cents)::bigint AS flow
        FROM journal_lines l
        JOIN journal_entries e ON e.id = l.entry_id
       WHERE l.customer_id = $1::uuid

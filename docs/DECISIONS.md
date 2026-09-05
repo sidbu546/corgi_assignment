@@ -382,3 +382,133 @@ is decoration. Measured from the deployed app, Alpaca answered in 57ms, Plaid in
 **Also deliberate.** A live slot with missing credentials renders "no keys", not
 green. Intent and configuration are reported separately, because a slot I meant
 to be live but did not configure is not live.
+
+---
+
+## 2026-09-05T20:05Z — Market data downgraded from live to simulated
+
+**Decided.** Market data is a SIMULATED slot. The registry, the README and the
+`/integrations` page all say so.
+
+**Why.** Alpaca Broker sandbox credentials are not entitled to the market data
+API. Tested both auth forms before concluding it: HTTP Basic returned 401, the
+`APCA-API-KEY-ID` / `APCA-API-SECRET-KEY` headers returned 401, and the
+broker-host proxy path returned 404.
+
+The brief lists market data as "live or simulated", unlike brokerage, KYC and
+funding which must be live — so this is a permitted substitution, and the three
+mandatory slots remain genuinely live.
+
+**Why it is arguably the better choice anyway.** The restatement test requires a
+CORRECTED CLOSE to arrive for a date three days ago. No real feed will do that
+on demand. Owning the price source is what makes the central scenario of this
+track demonstrable rather than described.
+
+**What the simulator does.** Deterministic geometric random walk seeded from the
+symbol, so the same history is produced on every run — a demo that shows
+different numbers each time it is seeded cannot be reasoned about. Prices exist
+only on trading days, with one close deliberately withheld (VXUS on 22 July) so
+the stale-price path runs against real data rather than only in a unit test.
+
+---
+
+## 2026-09-05T20:40Z — A bug I made three times, and the check that ends it
+
+**The bug.** In Postgres, `sum()` over a `bigint` column returns **numeric**,
+not bigint. Our type parser deliberately maps numeric to a JavaScript *string*
+(it belongs in Decimal; `parseFloat` on a numeric is the units-versus-money bug
+wearing a hat). So an un-cast aggregate over a money column arrives as a string.
+
+I wrote this same bug three times — in `accountBalances`, in
+`externalFlowsByDay`, and in `loadLots` — before stopping to think about it.
+
+**Why it was nearly invisible.** The first instance shipped and *looked* fine:
+the home page reported "trial balance nets to zero" because the table was empty
+and `[].every()` is `true`. The failure only appeared once there was data. The
+lucky outcome is a thrown `Cannot mix BigInt and other types`. The unlucky one
+is `'0' === 0n` evaluating quietly to false, which is how a trial balance
+reports the wrong answer for the wrong reason.
+
+**The fix.** Not the three instances — a test that fails the build:
+`src/lib/sql-hygiene.test.ts` scans every `.ts` and `.sql` file for a `sum()`
+over any known money column that is not immediately cast `::bigint`, and a
+second test bans `parseFloat`/`Number()` over a money column. It found two more
+occurrences I had not noticed, in the invariants module and the seed.
+
+Fixing instances of a bug you keep making is not fixing the bug.
+
+**Related, same root cause.** `registerPgTypes` was a side effect buried inside
+`db.ts`, so any script importing `Pool` from `pg` directly got the DEFAULT
+parsers. It is now `src/lib/pg-types.ts`, imported explicitly by every entry
+point, so the mapping is a stated dependency rather than a lucky import order.
+
+---
+
+## 2026-09-05T20:44Z — now() is the transaction timestamp, not the wall clock
+
+**Bug found by the seed.** Every customer's KYC status read as `not_started`
+even though the events said otherwise. Cause: `recorded_at DEFAULT now()`, and
+Postgres `now()` returns the *transaction start* time — so all three
+`kyc_events` rows written in one transaction share an identical `recorded_at`,
+and `ORDER BY recorded_at DESC LIMIT 1` picked an arbitrary one.
+
+**Fix.** Order by `recorded_at DESC, id DESC`. The id is a monotonic bigserial,
+so it is a correct tiebreaker within a transaction and across transactions.
+
+**Kept `now()` rather than switching to `clock_timestamp()`**, deliberately.
+Facts written in one transaction genuinely *were* learned atomically; giving
+them microsecond-apart timestamps would imply an ordering in the outside world
+that did not exist. The ordering problem is a query concern, and it is fixed
+where it belongs.
+
+---
+
+## 2026-09-05T20:52Z — Alpaca sandbox ACH does not settle in a demo window
+
+**Measured, not assumed.** A background watcher polled a real sandbox ACH
+deposit every 60 seconds for **116 minutes**. It went `QUEUED` ->
+`SENT_TO_CLEARING` within a minute and then stayed there. It never settled.
+Today is a Saturday, and real ACH does not process at weekends — the sandbox
+appears to be simulating that faithfully.
+
+**Consequence for the demo, stated up front rather than discovered live.** The
+demo cannot fund an account from zero. So:
+
+- demo accounts are seeded already funded;
+- the demo shows a deposit being *initiated*, and the in-flight state is
+  visible as a real ledger position (`assets:cash:pending_deposit`) rather than
+  a spinner pretending to be progress;
+- the README says this plainly.
+
+This is not a broken integration. It is the integration behaving correctly, and
+the product has to model it either way — which is exactly why cash is three
+buckets and not one.
+
+---
+
+## 2026-09-05T20:56Z — Seed design: refuses rather than duplicates
+
+**Decided.** `npm run seed` refuses to run against a non-empty journal.
+`npm run seed -- --reset` DROPs the schema, re-migrates and repopulates.
+
+**Why refusing matters.** Money rows are append-only, so seeding on top of
+existing data would *add* a second history rather than replace one — a subtly
+corrupt database that still balances. Refusing is the only safe default.
+
+**Why --reset is not a contradiction.** It issues `DROP SCHEMA`, a DDL
+operation on a development database. It never attempts UPDATE, DELETE or
+TRUNCATE on a money row; those remain impossible, and the invariant suite
+proves it.
+
+**One honest limitation.** `recorded_at` is database-assigned and can never be
+backdated — that is the whole point of it — so every seeded entry carries a
+recorded_at of "when the seed ran". That is truthful: we did learn it all at
+once. Effective dates are genuinely historical, so "the portfolio as it stood on
+15 July" works fully. The as-published axis becomes meaningful from the seed
+forward, which is where the restatement demo operates anyway.
+
+**Also fixed here.** The price profile table used numeric separators
+(`7_390_0` intending $73.90) and produced prices ten times too high — BND at
+$739 a share. The ledger balanced perfectly throughout, which is the point:
+internal consistency is not the same as being right. Rewritten as plain
+integers with the dollar value in a comment beside each.

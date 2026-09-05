@@ -227,17 +227,21 @@ export async function loadLots(
     consumed_units: string;
     consumed_cost: bigint;
   }>(
+    // ::bigint on every money aggregate. sum() over a bigint column returns
+    // NUMERIC in Postgres, which our type parser deliberately leaves as a
+    // string — so without this cast `consumedCost` arrives as a string and the
+    // subtraction in remainingCost() throws on mixing BigInt with a string.
     `SELECT l.id,
             l.symbol,
             l.units,
             l.cost_cents,
             l.acquired_at,
-            coalesce(c.units, 0)      AS consumed_units,
-            coalesce(c.cost_cents, 0) AS consumed_cost
+            coalesce(c.units, 0)              AS consumed_units,
+            coalesce(c.cost_cents, 0)::bigint AS consumed_cost
        FROM tax_lots l
        LEFT JOIN LATERAL (
-              SELECT sum(units)      AS units,
-                     sum(cost_cents) AS cost_cents
+              SELECT sum(units)              AS units,
+                     sum(cost_cents)::bigint AS cost_cents
                 FROM tax_lot_consumptions tc
                WHERE tc.lot_id = l.id
                  AND tc.recorded_at <= coalesce($3::timestamptz, 'infinity')

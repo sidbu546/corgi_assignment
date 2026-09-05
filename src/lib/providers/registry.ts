@@ -68,13 +68,18 @@ export const PROVIDER_SLOTS: ProviderSlot[] = [
   {
     id: 'market_data',
     slot: 'Market data (daily closes)',
-    provider: 'Alpaca Market Data (sandbox credentials)',
-    mode: 'live',
-    endpoint: 'https://data.alpaca.markets',
+    provider: 'Built in-house — SIMULATED',
+    mode: 'simulated',
     note:
-      'Daily bars drive valuation. Missing closes and stale prices are surfaced ' +
-      'with an explicit age rather than silently carried forward.',
-    requiredEnv: ['ALPACA_BROKER_KEY_ID', 'ALPACA_BROKER_SECRET'],
+      'Downgraded from live after testing: Alpaca Broker sandbox credentials are ' +
+      'not entitled to the market data API (401 on every auth form, both Basic ' +
+      'and APCA headers). The brief lists this slot as "live or simulated", ' +
+      'unlike brokerage, KYC and funding which must be live. ' +
+      'The simulator generates a deterministic daily close series with real ' +
+      'market-calendar gaps, and — the reason this is arguably the better choice ' +
+      'here — it can issue a CORRECTED CLOSE on demand, which is what the ' +
+      'restatement test requires and what no real feed will do for you.',
+    requiredEnv: [],
   },
   {
     id: 'custodian_file',

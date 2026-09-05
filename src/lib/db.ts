@@ -16,16 +16,12 @@
  *     that way — it is handed to Decimal, never to parseFloat.
  */
 
-import { Pool, types, type PoolClient } from 'pg';
+import { Pool, type PoolClient } from 'pg';
 
-// OID 20 = int8/bigint. Without this, cents come back as JS strings and get
-// coerced to Number somewhere downstream, which is how you get $0.01 errors
-// that nobody can reproduce.
-types.setTypeParser(20, (value: string) => BigInt(value));
-
-// OID 1700 = numeric. Left as a string on purpose: it goes straight into
-// Decimal. parseFloat on a numeric is the units-vs-money bug wearing a hat.
-types.setTypeParser(1700, (value: string) => value);
+// Registers the bigint/numeric parsers. Imported explicitly rather than relied
+// on as a side effect of importing this file — see pg-types.ts for why that
+// distinction cost me a bug.
+import './pg-types';
 
 declare global {
   // Next.js dev server hot-reloads modules; without this the pool is recreated
