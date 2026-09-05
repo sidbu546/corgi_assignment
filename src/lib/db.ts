@@ -71,6 +71,24 @@ export async function queryOne<T = Record<string, unknown>>(
 }
 
 /**
+ * Borrow a client for a read that spans several queries.
+ *
+ * No transaction: these are reads, and wrapping them in one would take a
+ * snapshot that is no more correct here — every query already pins its own
+ * point in time explicitly through the `effective_at` / `recorded_at`
+ * predicates, which is a stronger guarantee than transaction isolation and one
+ * the caller chooses deliberately.
+ */
+export async function withClient<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool().connect();
+  try {
+    return await fn(client);
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * Run a function inside a transaction.
  *
  * This is the ONLY way money is written. The ledger's balance check is a

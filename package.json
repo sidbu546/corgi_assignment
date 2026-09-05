@@ -11,6 +11,8 @@
     "seed": "tsx db/seed.ts",
     "verify": "tsx db/verify-invariants.ts",
     "replay-test": "tsx scripts/replay-test.ts",
+    "value": "tsx scripts/value-history.ts",
+    "inspect": "tsx scripts/inspect.ts",
     "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {

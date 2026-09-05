@@ -230,11 +230,26 @@ export default async function Home() {
               ['Time-weighted return', 'done', '13 unit tests incl. flow neutrality'],
               ['Provider registry with kill switch', 'done', 'this page'],
               ['Alpaca Broker client', 'done', 'live smoke test against sandbox'],
-              ['Webhook endpoints + idempotency', 'in progress', '—'],
-              ['Auth, portfolio and ops screens', 'in progress', '—'],
+              [
+                'Webhooks: verified, idempotent, replay-proof',
+                'done',
+                'npm run replay-test — 6/6 against the deployed system',
+              ],
+              ['Market calendar, T+1 settlement', 'done', '17 unit tests'],
+              ['Daily valuation with stale-price handling', 'done', '88 runs backfilled'],
+              ['Seed script from zero', 'done', 'npm run seed -- --reset'],
+              [
+                'Auth, customer portfolio, ops console',
+                'done',
+                'scripts/smoke-ui.ts — 22/22 incl. role separation',
+              ],
+              ['Onboarding: create a Persona inquiry from the UI', 'not started', '—'],
+              ['Plaid Link + deposit from the UI', 'not started', '—'],
+              ['Place a real Alpaca order from the UI', 'blocked', 'sandbox ACH has not settled — see note'],
               ['Custodian file simulator + reconciliation', 'not started', '—'],
               ['Restatement machinery', 'not started', '—'],
               ['MCP agent surface', 'not started', '—'],
+              ['Maker-checker on money-out', 'partial', 'schema + queue; no execution path yet'],
             ].map(([name, state, evidence]) => (
               <tr key={name}>
                 <td>{name}</td>
@@ -243,9 +258,11 @@ export default async function Home() {
                     className={`badge ${
                       state === 'done'
                         ? 'badge-live'
-                        : state === 'in progress'
+                        : state === 'in progress' || state === 'partial'
                           ? 'badge-info'
-                          : 'badge-muted'
+                          : state === 'blocked'
+                            ? 'badge-down'
+                            : 'badge-muted'
                     }`}
                   >
                     {state}

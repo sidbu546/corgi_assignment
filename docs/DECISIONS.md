@@ -587,3 +587,87 @@ found this by reading the code.
 **Proof, against the deployed system:** `npm run replay-test` — 6/6, including
 processed → duplicate → duplicate, tampered-body rejected, hour-old signature
 rejected, and every response a 200 so no provider retries into a wall.
+
+---
+
+## 2026-09-05T22:30Z — Answering a fair challenge: the core loop was not in the deployment
+
+**Prompted by review**, and the criticism was correct. What was deployed was the
+foundation and the evidence layer — ledger, lots, returns maths, calendar,
+webhooks, seed — plus pages proving those work. The brief's actual core loop
+(onboard -> link a bank -> deposit -> buy -> value daily -> restate -> reconcile)
+was not visible anywhere.
+
+**Why it happened.** I built depth-first on correctness because the ledger is
+the thing that cannot be retrofitted, and the brief's own recommended build
+order says ledger and units model first. That reasoning holds, but it stops
+being a justification at the point where a reviewer opens the URL and cannot see
+the product. Correctness that nobody can see does not score, and more
+importantly it cannot be checked.
+
+**What changed as a result.** Valuation, authentication, the customer portfolio
+and the ops console are now built and deployed, so three of the six loop steps
+are visible and exercisable. The remaining three are listed as unbuilt on the
+overview page and in the README, with the blocked one labelled blocked.
+
+**The rule I should have applied from the start:** ship a thin slice of the
+visible loop early, then deepen it. Building the whole foundation before
+anything is visible optimises for a system that is correct at hour 47 and
+undemonstrable at hour 20.
+
+---
+
+## 2026-09-05T22:34Z — Alpaca sandbox will not fund an account today, and why that is not fixable
+
+**Established by exhaustion, not assumption.** A real order cannot be placed
+until the deposit settles, so I tried every funding route the sandbox exposes:
+
+- **ACH** — settles on trading days only. Two transfers have sat at
+  `SENT_TO_CLEARING` for over three hours. Attempting a second transfer returned
+  `maximum number of ACH transfers allowed is 1 per trading day in each
+  direction`, which is the sandbox stating the rule outright.
+- **Wire** — `cannot submit incoming wire transfer using this API`.
+- **Journal (JNLC) from a firm account** — the endpoint works and validates
+  account ids, but no firm account is exposed through `/v1/accounts`, which
+  returns only the three trading accounts.
+- **Order against zero balance** — `insufficient buying power`, `buying_power: 0`.
+
+Today is Saturday. The sandbox is faithfully modelling that ACH does not settle
+at weekends.
+
+**Decision.** Build the order path against the real Alpaca client anyway, and
+label it **blocked** rather than substituting a simulator behind an integration
+the README calls live. Swapping in a fake at this point would be precisely the
+"simulated integration presented as live" that is an automatic fail — and it
+would be a lie told to make a status table look better.
+
+**What the demo does instead.** Seeded accounts are already funded, so the whole
+downstream loop (valuation, lots, returns, restatement, reconciliation) is real
+and demonstrable. The deposit path is shown being *initiated*, with the in-flight
+state visible as `assets:cash:pending_deposit` — a real ledger position, not a
+spinner.
+
+---
+
+## 2026-09-05T22:40Z — Valuation is a snapshot, and re-running it is free
+
+**Decided.** `runValuation` never overwrites. Valuing the same date twice
+creates a second run with a later `recorded_at`; the later one wins for "as
+corrected", and the earlier one remains the answer to "as published".
+
+**Consequence I chose deliberately.** Opening the portfolio page triggers a
+valuation run, so simply looking at the page leaves an audit trail. That is a
+little unusual, and it is the right trade: the number on screen is then provably
+derived from the ledger at that instant rather than from whatever a nightly job
+last wrote, and the cost is one cheap insert.
+
+**Pending deposits are excluded from portfolio value.** Money in flight is not
+ours yet and can still bounce. Including it would inflate the balance and, worse,
+pollute the return when it settled — the same money would appear once as an
+increase in value and again as an external flow.
+
+**Stale prices are shown, not smoothed.** When there is no close for a date the
+previous close is carried forward and its age in days is stored on the row and
+rendered next to the price. 170 of 548 position valuations in the seeded history
+are on a carried-forward price — mostly weekends, plus the one close the
+simulator withholds on purpose.

@@ -28,10 +28,26 @@ dividend, a corrected close — history is **restated, never rewritten**.
 
 ### Demo credentials
 
-> **Not yet available.** Authentication and the two role-based portals are still
-> being built. This section will carry a customer login and an ops login before
-> submission. Nothing here is hidden behind a login today — every page above is
-> open.
+Sign in at **https://corgi-assignment.vercel.app/login** — the logins are also
+listed on that page.
+
+| Role | Email | Password | What it shows |
+|---|---|---|---|
+| **Customer** | `dana@demo.ledgerly.app` | `demo-password` | Funded. Two deposits, a Growth model, a FIFO sell across two lots, dividends. |
+| Customer | `marcus@demo.ledgerly.app` | `demo-password` | Funded, Balanced model. |
+| Customer | `priya@demo.ledgerly.app` | `demo-password` | **KYC pending** — gated, cannot transact. |
+| Customer | `alex@demo.ledgerly.app` | `demo-password` | **KYC rejected** — gated, with the reason shown. |
+| **Ops** | `ops@demo.ledgerly.app` | `ops-password` | Ops console. The *maker*. |
+| Ops | `approver@demo.ledgerly.app` | `ops-password` | Ops console. The *checker* — a different identity, because nobody approves their own action. |
+
+Two gated customers are seeded on purpose: the brief asks for pending and
+rejected to be visible, not just the happy path.
+
+Passwords are scrypt-hashed with a per-user salt and compared in constant time;
+the session cookie is HMAC-signed, `httpOnly`, and expires in 12 hours.
+`npx tsx scripts/smoke-ui.ts` asserts all of this against the deployed system,
+including that an ops user cannot open a customer portfolio, a customer cannot
+open the ops console, and a forged cookie is rejected.
 
 ---
 
