@@ -50,7 +50,7 @@ export default async function ReconPage() {
 
     // ALL breaks from the newest run PER CUSTOMER, for the newest as-of date.
     //
-    // I got this wrong twice, so it is worth being precise about the shape.
+    // I got this wrong three times, so it is worth being precise about the shape.
     // reconcile() creates one recon_run per CUSTOMER. So:
     //
     //   DISTINCT ON (as_of_date)              -> one customer, everyone else hidden
@@ -60,13 +60,21 @@ export default async function ReconPage() {
     // whose entire purpose is that a break must not get lost. The correct shape
     // is: pick the latest RUN per customer, then take EVERY break belonging to
     // those runs.
+    //
+    // The third mistake was subtler and went the other way. The latest run was
+    // derived from recon_breaks, so a run that produced NO breaks could not be
+    // found — and a clean reconciliation could therefore never clear the
+    // previous morning's breaks. The screen kept showing two criticals while
+    // the run that had just finished reported zero. recon_runs now records its
+    // own customer_id, so a clean run is a first-class latest run and correctly
+    // displays nothing.
     const { rows: breaks } = await client.query<BreakRow>(
       `WITH latest_run_per_customer AS (
-              SELECT DISTINCT ON (b.customer_id) b.customer_id, b.run_id
-                FROM recon_breaks b
-                JOIN recon_runs r ON r.id = b.run_id
+              SELECT DISTINCT ON (r.customer_id) r.customer_id, r.id AS run_id
+                FROM recon_runs r
                WHERE r.as_of_date = (SELECT max(as_of_date) FROM recon_runs)
-               ORDER BY b.customer_id, r.started_at DESC
+                 AND r.customer_id IS NOT NULL
+               ORDER BY r.customer_id, r.started_at DESC
        )
        SELECT b.id, c.legal_name, b.break_type, b.classification, b.symbol,
               b.ours_units, b.theirs_units, b.ours_cents, b.theirs_cents,

@@ -81,9 +81,12 @@ export async function reconcile(
   const breaks: ReconBreak[] = [];
 
   const { rows: runRows } = await client.query<{ id: string }>(
-    `INSERT INTO recon_runs (as_of_date, source, file_ref)
-     VALUES ($1, $2, $3) RETURNING id`,
-    [asOf, CUSTODIAN_SOURCE, `${file.account_ref}:${asOf}`],
+    // customer_id is recorded on the RUN, not inferred from the breaks it
+    // produced. A run that finds nothing has to be findable too, or a clean
+    // reconciliation can never clear the previous morning's breaks.
+    `INSERT INTO recon_runs (as_of_date, source, file_ref, customer_id)
+     VALUES ($1, $2, $3, $4::uuid) RETURNING id`,
+    [asOf, CUSTODIAN_SOURCE, `${file.account_ref}:${asOf}`, customerId],
   );
   const runId = runRows[0].id;
 
