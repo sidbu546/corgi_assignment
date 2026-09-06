@@ -37,7 +37,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
   const session = await requireCustomer();
   const body = (await request.json().catch(() => ({}))) as {
-    action?: 'token' | 'complete' | 'sandbox-link';
+    action?: 'token' | 'complete' | 'sandbox-link' | 'unlink';
     publicToken?: string;
     /** Demo control: link an account owned by someone else, to show the block. */
     mismatch?: boolean;
@@ -47,6 +47,42 @@ export async function POST(request: Request) {
     return await transaction(async (client) => {
       const customer = await loadCustomer(client, session.customerId);
       await assertMayTransact(client, customer.id);
+
+      // ---- 0. unlink -------------------------------------------------------
+      //
+      // Deactivates rather than deletes: an attempted or former funding source
+      // is exactly the thing an ops team wants to be able to find later, and
+      // bank_links carries refused attempts for the same reason.
+      //
+      // It deliberately does NOT close the brokerage account. Unlinking a bank
+      // is not closing an account, and the daily ACH allowance belongs to the
+      // broker rather than to us — relinking gives a new ACH relationship on
+      // the same account, not a new allowance.
+      if (body.action === 'unlink') {
+        const { rows: deactivated } = await client.query<{ id: string }>(
+          `UPDATE bank_links SET is_active = false
+            WHERE customer_id = $1::uuid AND is_active
+            RETURNING id`,
+          [customer.id],
+        );
+        await client.query(
+          `UPDATE customers SET plaid_item_id = NULL WHERE id = $1::uuid`,
+          [customer.id],
+        );
+        return NextResponse.json({
+          unlinked: deactivated.length,
+          brokerageAccountKept: customer.alpaca_account_id ?? null,
+          note:
+            deactivated.length === 0
+              ? 'There was no active bank link to remove.'
+              : 'Bank unlinked. The link rows are deactivated, not deleted — a ' +
+                'former funding source is something an ops team needs to be able ' +
+                'to find. Your brokerage account is untouched: unlinking a bank ' +
+                'is not closing an account. Note that the broker allows one ACH ' +
+                'transfer per account per trading day, and relinking gives a new ' +
+                'ACH relationship on the same account, not a new allowance.',
+        });
+      }
 
       // ---- 1. token for the browser ---------------------------------------
       if (body.action === 'token') {

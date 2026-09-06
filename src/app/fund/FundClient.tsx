@@ -83,6 +83,21 @@ export default function FundClient({
           <div className="mono dim" style={{ fontSize: 11.5, marginTop: 6 }}>
             Alpaca ACH relationship {bankLink.alpaca_relationship_id}
           </div>
+          <div style={{ marginTop: 10 }}>
+            <button
+              className="btn"
+              disabled={!canTransact || busy !== null}
+              onClick={() => post('/api/funding/link', { action: 'unlink' }, 'Unlink bank')}
+            >
+              {busy === 'Unlink bank' ? 'Unlinking…' : 'Unlink this bank'}
+            </button>
+            <p className="dim" style={{ fontSize: 12, margin: '8px 0 0' }}>
+              Deactivates the link so the linking step can be walked again. The row
+              is kept, not deleted — a former funding source is something an ops
+              team needs to be able to find. Your brokerage account stays open:
+              unlinking a bank is not closing an account.
+            </p>
+          </div>
         </div>
       ) : (
         <div className="card" style={{ marginBottom: 12 }}>
@@ -166,7 +181,15 @@ export default function FundClient({
           <button
             className="btn btn-primary"
             type="submit"
-            disabled={!canTransact || !bankLink?.alpaca_relationship_id || busy !== null}
+            disabled={
+              !canTransact ||
+              // is_active, not just the presence of a relationship id. An
+              // unlinked bank still has one, and without this the deposit
+              // button stayed enabled after unlinking — the same conflation
+              // that made the link card claim "linked" with no way to relink.
+              !(bankLink?.is_active && bankLink.alpaca_relationship_id) ||
+              busy !== null
+            }
           >
             {busy === 'Deposit' ? 'Initiating…' : 'Deposit via ACH'}
           </button>
