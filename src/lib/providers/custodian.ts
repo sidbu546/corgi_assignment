@@ -117,12 +117,32 @@ export async function generateFile(
   if (anomalies.tamperPosition) {
     const { symbol, deltaUnits } = anomalies.tamperPosition;
     const existing = positions.find((p) => p.symbol === symbol);
+
     if (existing) {
-      existing.units = new Decimal(existing.units).plus(deltaUnits).toFixed(6);
-      injected.push(`position ${symbol} altered by ${deltaUnits} units`);
-    } else {
+      const altered = new Decimal(existing.units).plus(deltaUnits);
+      // A custodian reports what it believes it holds. It cannot hold a
+      // negative quantity of an ETF, so a tamper that would drive the position
+      // below zero is clamped rather than emitted — an impossible break is
+      // still detected, but it is detected as nonsense and would rightly be
+      // picked apart.
+      existing.units = Decimal.max(altered, 0).toFixed(6);
+      injected.push(
+        `position ${symbol} altered by ${deltaUnits} units` +
+          (altered.isNegative() ? ' (clamped at zero)' : ''),
+      );
+    } else if (new Decimal(deltaUnits).greaterThan(0)) {
+      // A phantom position — the custodian believes we hold something we do
+      // not. Real, and worth testing. Only ever POSITIVE.
       positions.push({ symbol, units: new Decimal(deltaUnits).toFixed(6) });
       injected.push(`phantom position ${symbol} of ${deltaUnits} units`);
+    } else {
+      // Asked to remove units from a position the customer does not hold.
+      // There is nothing to remove; inventing a negative holding would
+      // fabricate a break that could not occur in reality.
+      injected.push(
+        `no ${symbol} position to tamper with — skipped rather than inventing ` +
+          `a negative holding`,
+      );
     }
   }
 

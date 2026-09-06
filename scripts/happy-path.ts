@@ -48,7 +48,10 @@ import { reconcile } from '../src/lib/recon';
 import { formatCents, dollarsToCents } from '../src/lib/money';
 import { marketDateOf } from '../src/lib/calendar';
 
-const NAME = 'Robin Castellanos';
+// A distinct name per run. Repeat runs otherwise produce several customers
+// called the same thing, which reads as a duplicate-record bug on the ops
+// screens when it is simply the script having been run twice.
+const NAME = `Robin Castellanos ${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 let step = 0;
@@ -149,7 +152,7 @@ async function main() {
     const account = await createAccount({
       email: `alpaca.${stamp}@example.com`,
       givenName: 'Robin',
-      familyName: 'Castellanos',
+      familyName: NAME.split(' ').slice(1).join(' '),
       dateOfBirth: '1990-01-01',
       taxId:
         `${100 + (stamp % 500)}-${String(10 + (stamp % 89)).padStart(2, '0')}-` +
