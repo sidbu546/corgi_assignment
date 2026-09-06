@@ -13,6 +13,33 @@ export default async function ApprovalsPage() {
 
   const rows = await withClient((client) => listApprovals(client, 50));
 
+  // Who money can be withdrawn from. Only customers with settled cash and an
+  // approved identity — a dropdown of people who cannot be paid is a trap.
+  const customers = await withClient(async (client) => {
+    const { rows } = await client.query<{
+      email: string;
+      legal_name: string;
+      withdrawable: bigint;
+    }>(
+      `SELECT c.email, c.legal_name,
+              coalesce(sum(l.amount_cents) FILTER (
+                WHERE l.account_code IN ('assets:cash:settled',
+                                         'assets:cash:unsettled_proceeds')), 0)::bigint
+                AS withdrawable
+         FROM customers c
+         JOIN journal_lines l ON l.customer_id = c.id
+        WHERE c.legal_name <> 'Invariant Probe'
+        GROUP BY c.email, c.legal_name
+       HAVING coalesce(sum(l.amount_cents) FILTER (
+                WHERE l.account_code = 'assets:cash:settled'), 0) > 0
+        ORDER BY c.legal_name`,
+    );
+    return rows.map((r) => ({
+      email: r.email,
+      label: `${r.legal_name} — ${formatCents(r.withdrawable)} withdrawable`,
+    }));
+  });
+
   const queue: QueueRow[] = rows.map((r) => ({
     id: r.id,
     action_type: r.action_type,
@@ -93,6 +120,7 @@ export default async function ApprovalsPage() {
         rows={queue}
         me={session.email}
         threshold={formatCents(APPROVAL_THRESHOLD_CENTS)}
+        customers={customers}
       />
 
       <h2>What an agent is never allowed to do</h2>

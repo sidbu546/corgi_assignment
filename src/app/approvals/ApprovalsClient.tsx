@@ -30,14 +30,16 @@ export default function ApprovalsClient({
   rows,
   me,
   threshold,
+  customers,
 }: {
   rows: QueueRow[];
   me: string;
   threshold: string;
+  customers: Array<{ email: string; label: string }>;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [log, setLog] = useState<Array<{ ok: boolean; title: string; body: string }>>([]);
-  const [customer, setCustomer] = useState('dana@demo.ledgerly.app');
+  const [customer, setCustomer] = useState(customers[0]?.email ?? '');
   const [amount, setAmount] = useState('1500');
 
   async function raise() {
@@ -126,12 +128,18 @@ export default function ApprovalsClient({
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <label>
             <div className="stat-label" style={{ marginBottom: 4 }}>Customer</div>
-            <input
-              style={{ ...input, width: 250 }}
+            <select
+              style={{ ...input, width: 330 }}
               value={customer}
               onChange={(e) => setCustomer(e.target.value)}
-              placeholder="dana@demo.ledgerly.app"
-            />
+            >
+              {customers.length === 0 && <option value="">no customer has settled cash</option>}
+              {customers.map((c) => (
+                <option key={c.email} value={c.email}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
           </label>
           <label>
             <div className="stat-label" style={{ marginBottom: 4 }}>Amount (USD)</div>
@@ -144,7 +152,7 @@ export default function ApprovalsClient({
           </label>
           <button
             className="btn btn-primary"
-            disabled={busy !== null}
+            disabled={busy !== null || customers.length === 0}
             onClick={() => raise()}
           >
             {busy === 'raise' ? 'Raising…' : 'Have the agent raise it'}

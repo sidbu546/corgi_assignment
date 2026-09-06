@@ -24,6 +24,7 @@
 import type { PoolClient } from 'pg';
 import { postEntry, usd } from './ledger/post';
 import { cashPosition } from './ledger/read';
+import { createTransfer } from './providers/alpaca';
 import { dollarsToCents, formatCents, type Cents } from './money';
 
 export const AGENT_PREFIX = 'agent:';
@@ -185,6 +186,90 @@ export interface ExecutionResult {
   entryId: string;
   amount: string;
   customerId: string;
+  /** What the outgoing rail actually did, in the rail's own words. */
+  rail: OutgoingRailResult;
+}
+
+export interface OutgoingRailResult {
+  attempted: boolean;
+  accepted: boolean;
+  transferId: string | null;
+  /** Verbatim, when the rail refused. */
+  providerError: string | null;
+  narrative: string;
+}
+
+/**
+ * Ask Alpaca to send the money out, and report exactly what happened.
+ *
+ * Never throws. A refusal by the rail must not roll back the instruction: the
+ * approval was validly given and the customer's claim on the money is real
+ * whether or not the bank leg goes today. What must not happen is the ledger
+ * quietly implying an ACH that never existed, so the refusal is written into
+ * the narrative instead.
+ */
+async function attemptOutgoingTransfer(
+  client: PoolClient,
+  input: { approvalId: string; customerId: string; amountCents: Cents },
+): Promise<OutgoingRailResult> {
+  const { rows } = await client.query<{
+    alpaca_account_id: string | null;
+    relationship_id: string | null;
+  }>(
+    `SELECT c.alpaca_account_id,
+            (SELECT b.alpaca_relationship_id FROM bank_links b
+              WHERE b.customer_id = c.id AND b.is_active
+              ORDER BY b.recorded_at DESC LIMIT 1) AS relationship_id
+       FROM customers c WHERE c.id = $1::uuid`,
+    [input.customerId],
+  );
+  const accountId = rows[0]?.alpaca_account_id ?? null;
+  const relationshipId = rows[0]?.relationship_id ?? null;
+
+  if (!accountId || !relationshipId) {
+    return {
+      attempted: false,
+      accepted: false,
+      transferId: null,
+      providerError: null,
+      narrative:
+        `[NO OUTGOING ACH ATTEMPTED — this customer has no linked bank at the ` +
+        `broker, so there is nowhere to send it. The entry records the ` +
+        `instruction on our books only.]`,
+    };
+  }
+
+  try {
+    const transfer = await createTransfer({
+      accountId,
+      relationshipId,
+      amountUsd: (Number(input.amountCents) / 100).toFixed(2),
+      direction: 'OUTGOING',
+      transferId: `wd-${input.approvalId}`,
+    });
+    return {
+      attempted: true,
+      accepted: true,
+      transferId: transfer.id,
+      providerError: null,
+      narrative:
+        `[OUTGOING ACH ${transfer.id} created at the broker, status ` +
+        `${transfer.status}. Look it up in the Alpaca sandbox.]`,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      attempted: true,
+      accepted: false,
+      transferId: null,
+      providerError: message.slice(0, 300),
+      narrative:
+        `[OUTGOING ACH ATTEMPTED AND REFUSED by the broker — ${message.slice(0, 200)}. ` +
+        `The money moved on our books and not on the rail. Typically this is ` +
+        `because the incoming deposit has not settled, so the account holds no ` +
+        `cash to send. The approval controls around this instruction are real.]`,
+    };
+  }
 }
 
 /**
@@ -254,6 +339,25 @@ export async function executeApproval(
     );
   }
 
+  // ---- try the real rail, and record whatever it says -------------------
+  //
+  // This used to write the entry and stop, which meant the ledger said money
+  // went to the bank while nothing had been asked to move it. Now the outgoing
+  // ACH is genuinely attempted, and the outcome — id or refusal — is recorded
+  // on the entry. It is attempted, not assumed: at the time of writing Alpaca
+  // refuses with "forbidden" because the incoming deposit is still
+  // SENT_TO_CLEARING and the account holds cash 0. Money cannot leave an
+  // account nothing has arrived in.
+  //
+  // Recording the refusal verbatim is the point. "We tried, here is what the
+  // rail said" is a fact; "simulated" was a label. When the deposit settles the
+  // same code path produces a real transfer id and no wording changes.
+  const rail = await attemptOutgoingTransfer(client, {
+    approvalId: approval.id,
+    customerId: approval.customer_id,
+    amountCents: amount,
+  });
+
   // Settled cash leaves; a payable to the customer is raised and immediately
   // discharged to the bank. Two entries would be more faithful if the rail were
   // slow, but the withdrawal payable is created and settled in the same breath
@@ -262,26 +366,17 @@ export async function executeApproval(
     kind: 'withdrawal.executed',
     effectiveAt: new Date(),
     source: 'approval',
-    sourceRef: approval.id,
     createdBy: input.executedBy,
-    // WHAT THIS ENTRY DOES AND DOES NOT CLAIM.
-    //
-    // It records the instruction and moves the money on OUR books. It does not
-    // create an outgoing ACH at Alpaca, and saying so here rather than only on
-    // a status page is the same rule the deposit settlement follows: the ledger
-    // never claims a rail did something it did not.
-    //
-    // Nor could it. Alpaca reports this account as cash 0 and refuses an
-    // outgoing transfer, because the incoming deposit is still
-    // SENT_TO_CLEARING. Money cannot leave an account nothing has arrived in.
+    // The entry references the BROKER's transfer id when the rail accepted, and
+    // falls back to the approval id when it did not. Either way the narrative
+    // states which happened, so the ledger never implies an ACH that does not
+    // exist — the same rule the deposit settlement follows.
+    sourceRef: rail.transferId ?? approval.id,
     narrative:
       `Withdrawal of ${formatCents(amount)} executed. Requested by ` +
       `${approval.requested_by} (${approval.requested_by_kind}), approved by ` +
       `${approval.decided_by}, executed by ${input.executedBy}. ` +
-      `[LEDGER ONLY — no outgoing ACH was created at the broker. The incoming ` +
-      `deposit is still SENT_TO_CLEARING, so Alpaca holds no settled cash for ` +
-      `this account and refuses an outgoing transfer. The approval controls ` +
-      `around this instruction are real; the rail out is not.]`,
+      rail.narrative,
     lines: [
       usd('assets:cash:settled', -amount, {
         customerId: approval.customer_id,
@@ -303,6 +398,7 @@ export async function executeApproval(
     entryId: entry.id,
     amount: formatCents(amount),
     customerId: approval.customer_id,
+    rail,
   };
 }
 

@@ -136,16 +136,16 @@ export const PROVIDER_SLOTS: ProviderSlot[] = [
     provider: 'Built in-house — SIMULATED',
     mode: 'simulated',
     note:
-      'Executing a withdrawal writes the journal entry and nothing else: no ' +
-      'OUTGOING ACH is created at Alpaca. That is not an oversight, and it ' +
-      'cannot be fixed by calling the API — Alpaca reports this account as ' +
-      'cash 0, cash_withdrawable 0, and refuses an outgoing transfer with ' +
-      '"forbidden", because the incoming deposit is still SENT_TO_CLEARING. ' +
-      'No money can leave an account nothing has yet arrived in. Our settled ' +
-      'cash exists because of the simulated settlement notification above, so ' +
-      'the withdrawal inherits exactly that much unreality and no more. ' +
-      'Entries say so: the narrative marks them LEDGER ONLY. The maker-checker ' +
-      'control around them is entirely real — the constraints refuse a ' +
+      'The outgoing ACH is genuinely ATTEMPTED at Alpaca on every execution, ' +
+      'and whatever the rail answers is written into the journal entry — a ' +
+      'transfer id when it accepts, the refusal verbatim when it does not. ' +
+      'Today it refuses: the account holds cash 0 because the incoming deposit ' +
+      'is still SENT_TO_CLEARING, and money cannot leave an account nothing ' +
+      'has arrived in. That is why this slot is marked simulated rather than ' +
+      'live — not because the call is faked, but because the leg does not ' +
+      'currently complete. When the deposit settles the same code path yields ' +
+      'a real transfer id and nothing here changes. The maker-checker control ' +
+      'around the instruction is real either way: the constraints refuse a ' +
       'self-approval whether or not an ACH follows.',
     requiredEnv: [],
   },
