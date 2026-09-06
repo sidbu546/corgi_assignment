@@ -25,8 +25,10 @@ import { createAchRelationshipFromPlaid } from '@/lib/providers/alpaca';
 import {
   assertMayTransact,
   ensureBrokerageAccount,
+  isUsableAccountStatus,
   loadCustomer,
   OnboardingError,
+  waitForUsableBrokerageAccount,
 } from '@/lib/onboarding';
 
 export const runtime = 'nodejs';
@@ -129,6 +131,26 @@ export async function POST(request: Request) {
 
       // ---- 3. mint a token scoped to Alpaca, and redeem it ----------------
       const alpacaAccountId = await ensureBrokerageAccount(client, customer);
+
+      // A brand-new account is not immediately ACTIVE, and Alpaca refuses an
+      // ACH relationship until it is. Say that clearly rather than surfacing a
+      // provider error that reads like a bug in us.
+      const accountStatus = await waitForUsableBrokerageAccount(alpacaAccountId);
+      if (!isUsableAccountStatus(accountStatus)) {
+        return NextResponse.json(
+          {
+            linked: false,
+            alpacaAccountId,
+            accountStatus,
+            error:
+              `Your brokerage account is still being opened at the broker ` +
+              `(status ${accountStatus}). The bank link needs an open account. ` +
+              `Wait a few seconds and press the button again — the account is ` +
+              `already created, so this will not open a second one.`,
+          },
+          { status: 409 },
+        );
+      }
 
       const processorToken = await createProcessorToken({
         accessToken,

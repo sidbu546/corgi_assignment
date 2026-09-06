@@ -140,6 +140,39 @@ export async function ensureBrokerageAccount(
   return account.id;
 }
 
+/** Statuses in which Alpaca will accept an ACH relationship for the account. */
+const USABLE_ACCOUNT_STATUSES = new Set(['ACTIVE', 'APPROVED']);
+
+/**
+ * Wait, briefly, for a freshly opened brokerage account to become usable.
+ *
+ * A new Alpaca account is not ACTIVE the instant it is created, and attaching a
+ * bank to one that is still opening fails with a provider error that reads like
+ * a bug in us. The terminal script has always polled for this; the browser path
+ * did not, which meant the very first bank link of a brand-new customer — the
+ * one step a reviewer is most likely to try — could fail on timing alone.
+ *
+ * Deliberately bounded and short. If the account is still not ready we say so
+ * plainly and ask for a retry, rather than blocking a request for minutes or
+ * pretending the link succeeded.
+ */
+export async function waitForUsableBrokerageAccount(
+  accountId: string,
+  { attempts = 5, delayMs = 2000 }: { attempts?: number; delayMs?: number } = {},
+): Promise<string> {
+  let status = '';
+  for (let i = 0; i < attempts; i++) {
+    status = (await getAccount(accountId)).status;
+    if (USABLE_ACCOUNT_STATUSES.has(status.toUpperCase())) return status;
+    if (i < attempts - 1) await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return status;
+}
+
+export function isUsableAccountStatus(status: string): boolean {
+  return USABLE_ACCOUNT_STATUSES.has(status.toUpperCase());
+}
+
 export interface BankLinkRow {
   id: string;
   institution: string;
