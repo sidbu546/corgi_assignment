@@ -17,6 +17,7 @@ import { transaction } from '@/lib/db';
 import { requireOps } from '@/lib/session';
 import { applyCorrectedClose, publishReturn, restoreOriginalClose } from '@/lib/restatement';
 import { resolvePrice } from '@/lib/providers/marketdata';
+import { performance } from '@/lib/performance';
 import { formatPercent } from '@/lib/returns';
 import { formatCents } from '@/lib/money';
 import Decimal from 'decimal.js';
@@ -67,19 +68,62 @@ export async function POST(request: Request) {
         );
 
         const out = [];
+        let wrote = 0;
+
         for (const customer of customers) {
+          // What WOULD be published, computed before writing anything.
+          const perf = await performance(client, {
+            customerId: customer.id,
+            from: periodStart,
+            to: date,
+          });
+
+          // Is that identical to the figure standing right now? Publishing an
+          // identical row again asserts we told the customer a second time,
+          // which is the same misstatement as a repeated identical correction.
+          // Only skip when the price was NOT reset — if it was, this genuinely
+          // is a fresh pre-correction publication.
+          const { rows: standing } = await client.query<{
+            twr: string;
+            end_value_cents: bigint;
+          }>(
+            `SELECT twr, end_value_cents FROM published_returns
+              WHERE customer_id = $1::uuid AND period_start = $2::date
+                AND period_end = $3::date
+              ORDER BY published_at DESC LIMIT 1`,
+            [customer.id, periodStart, date],
+          );
+
+          const unchanged =
+            !reset.restored &&
+            standing[0] !== undefined &&
+            new Decimal(standing[0].twr).equals(perf.twr) &&
+            standing[0].end_value_cents === perf.endValueCents;
+
+          if (unchanged) {
+            out.push({
+              customer: customer.legal_name,
+              twr: formatPercent(perf.twr),
+              endValue: formatCents(perf.endValueCents),
+              written: false,
+            });
+            continue;
+          }
+
           const result = await publishReturn(client, {
             customerId: customer.id,
             periodStart,
             periodEnd: date,
           });
+          wrote++;
           out.push({
             customer: customer.legal_name,
             twr: formatPercent(result.twr),
             endValue: formatCents(result.endValueCents),
+            written: true,
           });
         }
-        return { published: out, reset };
+        return { published: out, reset, wrote };
       });
 
       return NextResponse.json({
@@ -102,8 +146,13 @@ export async function POST(request: Request) {
             }
           : null,
         note:
-          'This is now what we have told the customer. It must remain answerable ' +
-          'forever, whatever we learn afterwards.',
+          outcome.wrote === 0
+            ? 'Nothing was written: this figure is already the standing published ' +
+              'return for the period, and publishing an identical row again would ' +
+              'assert we told the customer a second time. Press "apply the ' +
+              'corrected close" — that is the half of the scenario that moves.'
+            : 'This is now what we have told the customer. It must remain ' +
+              'answerable forever, whatever we learn afterwards.',
       });
     }
 
