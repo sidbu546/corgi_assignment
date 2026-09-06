@@ -19,6 +19,7 @@
     "mcp": "tsx scripts/mcp-server.ts",
     "agent-demo": "tsx scripts/agent-demo.ts",
     "trace": "tsx scripts/trace-money.ts",
+    "evidence": "tsx scripts/evidence.ts",
     "inspect": "tsx scripts/inspect.ts",
     "test": "tsx --test \"src/**/*.test.ts\""
   },
