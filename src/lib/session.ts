@@ -33,12 +33,24 @@ export async function requireCustomer(): Promise<
   SessionPayload & { customerId: string }
 > {
   const user = await requireUser();
-  if (user.role !== 'customer' || !user.customerId) redirect('/ops');
+  if (user.role !== 'customer' || !user.customerId) {
+    redirect('/ops?denied=customer-only');
+  }
   return user as SessionPayload & { customerId: string };
 }
 
+/**
+ * Ops-only pages.
+ *
+ * The redirect carries WHY. A silent bounce to another page is the worst of
+ * both worlds: the guard works, and the person on the other end assumes the
+ * link is broken. It cost a reviewer several minutes on /recon before this
+ * carried a reason.
+ */
 export async function requireOps(): Promise<SessionPayload> {
   const user = await requireUser();
-  if (user.role !== 'ops') redirect('/portfolio');
+  if (user.role !== 'ops') {
+    redirect('/portfolio?denied=ops-only');
+  }
   return user;
 }

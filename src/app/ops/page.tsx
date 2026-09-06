@@ -6,7 +6,12 @@ import { marketDateOf } from '@/lib/calendar';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export default async function OpsPage() {
+export default async function OpsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ denied?: string }>;
+}) {
+  const denied = (await searchParams).denied;
   const session = await requireOps();
   const today = marketDateOf(new Date());
 
@@ -82,6 +87,16 @@ export default async function OpsPage() {
         their own request. That rule is a database constraint, not a code path;{' '}
         <a href="/invariants">the invariants page proves it</a>.
       </p>
+
+      {denied === 'customer-only' && (
+        <div className="callout callout-warn">
+          <p style={{ margin: 0 }}>
+            <strong>That page belongs to a customer.</strong> Ops users see customer
+            data through this console, where it is attributable — not by opening a
+            customer&rsquo;s own portfolio.
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-3" style={{ marginBottom: 16 }}>
         <div className="card">

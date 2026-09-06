@@ -10,7 +10,12 @@ import KycClient from './KycClient';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export default async function PortfolioPage() {
+export default async function PortfolioPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ denied?: string }>;
+}) {
+  const denied = (await searchParams).denied;
   const session = await requireCustomer();
   const today = marketDateOf(new Date());
 
@@ -95,6 +100,20 @@ export default async function PortfolioPage() {
           valued {today}
         </span>
       </div>
+
+      {denied === 'ops-only' && (
+        <div className="callout callout-warn">
+          <p style={{ margin: 0 }}>
+            <strong>That page is for ops users.</strong> You are signed in as a
+            customer, so you were sent here instead. Sign out and sign in as{' '}
+            <span className="mono">ops@demo.ledgerly.app</span> (or{' '}
+            <span className="mono">approver@demo.ledgerly.app</span>) to reach{' '}
+            <span className="mono">/recon</span>,{' '}
+            <span className="mono">/restatements</span> and{' '}
+            <span className="mono">/approvals</span>.
+          </p>
+        </div>
+      )}
 
       {/* --------------- the KYC gate --------------- */}
       {!canTransact && (
