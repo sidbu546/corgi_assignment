@@ -25,6 +25,7 @@ const OPS_NAV = [
   { href: '/ops', label: 'Ops console' },
   { href: '/recon', label: 'Reconciliation' },
   { href: '/restatements', label: 'Restatements' },
+  { href: '/approvals', label: 'Approvals' },
 ];
 
 export default async function RootLayout({

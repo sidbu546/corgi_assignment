@@ -282,8 +282,16 @@ export default async function Home() {
                 'blocked',
                 'Alpaca’s own clock: next open Tue 8 Sep 09:30 ET. Monday is Labor Day.',
               ],
-              ['MCP agent surface', 'not started', '—'],
-              ['Maker-checker on money-out', 'partial', 'schema + queue; no execution path yet'],
+              [
+                'MCP agent surface — 3 read tools, 1 write tool',
+                'done',
+                'npm run mcp (stdio) · npm run agent-demo — 14/14 incl. boundaries',
+              ],
+              [
+                'Maker-checker on money-out, with execution',
+                'done',
+                'agent proposes, a DIFFERENT human approves, execution re-checks funds',
+              ],
             ].map(([name, state, evidence]) => (
               <tr key={name}>
                 <td>{name}</td>

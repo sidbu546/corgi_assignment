@@ -16,10 +16,13 @@
     "restate": "tsx scripts/restate.ts",
     "bridge": "tsx scripts/alpaca-bridge.ts",
     "happy-path": "tsx scripts/happy-path.ts",
+    "mcp": "tsx scripts/mcp-server.ts",
+    "agent-demo": "tsx scripts/agent-demo.ts",
     "inspect": "tsx scripts/inspect.ts",
     "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "date-fns": "^4.4.0",
     "decimal.js": "^10.6.0",
     "dotenv": "^17.4.2",

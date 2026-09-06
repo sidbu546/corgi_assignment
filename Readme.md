@@ -226,6 +226,8 @@ Kept current rather than aspirational. The same table is rendered on the
 | Restatement — as-published vs as-corrected | `npm run restate` — 9/9 |
 | Auth, customer portfolio, ops console | `npx tsx scripts/smoke-ui.ts` — 22/22 |
 | Seed from zero | `npm run seed -- --reset` |
+| MCP agent surface — 3 read tools, 1 write tool | `npm run mcp` (stdio) · `npm run agent-demo` — 14/14 |
+| Maker-checker on money-out, with execution | `npm run agent-demo` |
 | **The whole core loop, one command** | **`npm run happy-path` — 14/14** |
 
 **Blocked (not by us)**
@@ -239,10 +241,51 @@ Kept current rather than aspirational. The same table is rendered on the
 
 **Not yet built**
 
-- MCP agent surface
-- Maker-checker execution path (schema and queue exist; nothing executes yet)
-- A restatement UI showing as-published beside as-corrected (the machinery is
-  done and proven; only the screen is missing)
+- Installment/recurring deposits, and the second product line — see the cut list.
+
+---
+
+## The agent surface
+
+A working MCP server over stdio: `npm run mcp`. Three read tools and one write
+tool.
+
+| Tool | Kind | What it does |
+|---|---|---|
+| `get_portfolio` | read | Positions, cost basis, the three cash buckets, time-weighted return |
+| `explain_balance` | read | The journal lines behind a figure, so an agent can *check* a number rather than trust it |
+| `list_reconciliation_breaks` | read | Open breaks, classified and aged. It cannot resolve one. |
+| `propose_withdrawal` | **write** | Creates a **pending approval**. No journal entry, no transfer, no money. |
+
+Wire it into a client with:
+
+```json
+{ "mcpServers": { "ledgerly": {
+    "command": "npx", "args": ["tsx", "scripts/mcp-server.ts"],
+    "cwd": "/absolute/path/to/corgi_assignment" } } }
+```
+
+### Operations I would never hand an autonomous agent
+
+The rule: **an agent may read anything and propose anything, but may not
+decide, move, or erase.**
+
+| Never | Why |
+|---|---|
+| Approve or execute anything | Maker-checker collapses the moment the maker can also check. An agent that can approve its own proposal is an unsupervised agent with extra steps. |
+| Move money out | Irreversible, unbounded failure mode. Proposing is safe because a human sees the amount and destination first. |
+| Place an order directly | A fill is irreversible. A mispriced order cannot be recalled, and "the model said so" is not a defence to a customer. |
+| Write a journal entry | The ledger is the record of truth. Anything that writes to it unsupervised can rewrite what is true. |
+| Issue a corrected price or restate a figure | A restatement changes what a customer was *told*. That carries regulatory weight and needs a human name on it. |
+| Change KYC status | The gate exists to stop unverified people moving money. An agent that can open it has removed the control. |
+| Disable a provider | An operational decision with direct customer impact. |
+| Resolve a reconciliation break | Reading breaks is useful; closing them is how a genuine break gets buried. |
+
+These are **absent from the surface**, not merely guarded — there is no function
+to call. Enforcement is layered: the tool surface has no such function; every
+proposal is stamped `requested_by_kind = 'agent'`; `approvals_no_self_approval`
+is a **CHECK constraint** so the database refuses self-approval even from psql;
+and the executor refuses any decider or executor identity prefixed `agent:`.
 
 ---
 

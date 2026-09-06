@@ -1114,3 +1114,51 @@ the Growth model and summing to exactly $1,000.00. They rest until the open.
 **Alpaca's own clock confirms my market calendar independently:**
 `next_open: 2026-09-08T09:30:00-04:00`. Monday 7 September is Labor Day, which
 is precisely the long-weekend case the calendar tests already cover.
+
+---
+
+## 2026-09-06T06:00Z — The agent surface, and the boundary that makes it safe
+
+**Built.** A working MCP server over stdio (`npm run mcp`) with three read tools
+— `get_portfolio`, `explain_balance`, `list_reconciliation_breaks` — and one
+write tool, `propose_withdrawal`, which creates a PENDING approval and moves no
+money.
+
+**The design is the asymmetry.** An agent may READ anything and PROPOSE
+anything, but may not DECIDE, MOVE or ERASE. That is enforced in four
+independent places, deliberately, because a single control is a single point of
+failure:
+
+1. the tool surface has no function that posts an entry, trades, or approves —
+   the forbidden operations are **absent**, not guarded
+2. every proposal is stamped `requested_by_kind = 'agent'`
+3. `approvals_no_self_approval` is a CHECK constraint, so the database refuses
+   `decided_by = requested_by` even from psql
+4. the executor refuses any decider or executor identity prefixed `agent:`
+
+**`explain_balance` is the tool I would add again first.** It returns the
+journal lines behind a figure, which lets an agent *check* a number rather than
+trust one. An agent that can only read summaries will confidently repeat a wrong
+total; one that can drill to the entries can notice.
+
+**Maker-checker now executes.** Approval and execution are separate steps, and
+execution RE-CHECKS the balance against the ledger — cash can move between a
+reviewer clicking approve and money actually leaving. Execution is idempotent:
+the approval carries the id of the entry it produced, so a double-click cannot
+pay twice.
+
+**Proven, 14/14** (`npm run agent-demo`): the write tool wrote no journal entry
+(43 entries before, 43 after); an agent cannot approve its own proposal; an
+agent cannot approve *anyone's* request; an unapproved instruction cannot be
+executed; a human cannot approve their own request; a different human can
+approve an agent's proposal; execution posts a balanced entry; executing twice
+is refused; and the ledger still nets to zero afterwards.
+
+**A bug in my own harness, worth recording.** The first run failed with
+`entry has 1 line(s)`. Cause: the demo called `executeApproval` on a pooled
+client in autocommit, so each line insert committed separately and the DEFERRED
+balance trigger fired after the first leg. Production is fine — it goes through
+`db.transaction()` — but the failure message points at the symptom rather than
+the cause, so `postEntry`'s contract now says so in capitals. A deferred
+constraint is a sharp tool: it gives you atomic multi-leg entries, and it
+punishes anyone who forgets the transaction with a confusing error.

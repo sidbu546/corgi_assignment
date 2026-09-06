@@ -164,9 +164,12 @@ export function assertBalanced(lines: EntryLine[], context: string): void {
 /**
  * Write one balanced entry.
  *
- * Must be called inside a transaction (see db.transaction). The database's
- * deferred balance trigger fires at COMMIT, so the caller's transaction is what
- * makes the entry atomic — this function on its own does not commit anything.
+ * MUST be called inside a transaction (see db.transaction). This is not a
+ * style preference: the balance trigger is DEFERRED and fires at COMMIT, so in
+ * autocommit each line inserts and commits on its own and the trigger sees a
+ * one-legged entry. The failure is real but confusing — Postgres reports
+ * "entry has 1 line(s)" rather than "you forgot a transaction". Every
+ * production caller goes through db.transaction(); anything else must too.
  */
 export async function postEntry(
   client: PoolClient,
