@@ -69,7 +69,64 @@ async function main() {
       customerId: u.customer_id,
     })}`;
   };
-  const customerId = users.find((u) => u.email.startsWith('dana'))!.customer_id!;
+  // Pick a customer who can actually MOVE money right now.
+  //
+  // Alpaca allows one ACH transfer per account per trading day, and a settled
+  // deposit cannot be un-settled (the ledger is append-only). So the customer
+  // used last time usually cannot be used again today. Rather than hardcode one
+  // and fail, find a customer who either has a deposit in flight to settle, or
+  // still has their daily allowance.
+  const { rows: withPending } = await client.query<{ email: string; name: string }>(
+    `SELECT DISTINCT c.email, c.legal_name AS name
+       FROM cash_transfers t
+       JOIN customers c ON c.id = t.customer_id
+      WHERE t.provider_ref IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM cash_transfer_events e
+                         WHERE e.transfer_id = t.id
+                           AND e.kind IN ('settled','returned'))
+      ORDER BY c.email`,
+  );
+
+  const { rows: fundable } = await client.query<{ email: string; name: string }>(
+    `SELECT c.email, c.legal_name AS name
+       FROM customers c
+      WHERE c.alpaca_account_id IS NOT NULL
+        AND EXISTS (SELECT 1 FROM bank_links b
+                     WHERE b.customer_id = c.id AND b.is_active
+                       AND b.alpaca_relationship_id IS NOT NULL)
+        AND EXISTS (SELECT 1 FROM kyc_events k WHERE k.customer_id = c.id
+                     AND k.status = 'approved')
+      ORDER BY c.legal_name`,
+  );
+
+  const subject = withPending[0] ?? fundable[0];
+  if (!subject) {
+    console.log(
+      '\nNo customer can move money right now: none has a deposit in flight, and\n' +
+        'none is both KYC-approved and bank-linked. Run `npm run happy-path` to\n' +
+        'stand one up, then re-run this.',
+    );
+    client.release();
+    await pool.end();
+    return;
+  }
+
+  const SUBJECT_EMAIL = subject.email;
+  const startedWithPending = withPending.length > 0;
+
+  const { rows: cust } = await client.query<{ id: string }>(
+    `SELECT id FROM customers WHERE email = $1`,
+    [SUBJECT_EMAIL],
+  );
+  const customerId = cust[0].id;
+
+  // The demo signs in as this customer, so it needs their session.
+  const { rows: subjectUser } = await client.query<{
+    id: string; email: string; role: 'customer' | 'ops';
+    display_name: string; customer_id: string | null;
+  }>(`SELECT id, email, role, display_name, customer_id FROM users WHERE customer_id = $1::uuid`,
+     [customerId]);
+  if (subjectUser[0]) users.push(subjectUser[0]);
 
   async function balances(): Promise<Balances> {
     const { rows } = await client.query<{ account_code: string; cents: bigint }>(
@@ -124,6 +181,15 @@ async function main() {
     console.log(D('Every step below goes through the deployed HTTP API and the real'));
     console.log(D('webhook pipeline. Nothing writes the ledger directly.\n'));
 
+    console.log(`${B('Customer:')} ${subject.name}  ${D(SUBJECT_EMAIL)}`);
+    console.log(
+      D(
+        startedWithPending
+          ? '  (has a deposit already in flight — step 2 settles it)\n'
+          : '  (no deposit in flight — step 1 creates one)\n',
+      ),
+    );
+
     let before = await balances();
     console.log(B('Starting position\n'));
     show('now', before);
@@ -131,7 +197,7 @@ async function main() {
     // ---------------------------------------------------------------- 1
     console.log(B('\n\n1. Deposit $5,000 through the linked bank (real Alpaca ACH)\n'));
     await beat();
-    const dep = await post('/api/funding/deposit', { amount: '5000' }, 'dana@demo.ledgerly.app');
+    const dep = await post('/api/funding/deposit', { amount: '5000' }, SUBJECT_EMAIL);
     if (dep.status !== 200) {
       const msg = String(dep.json.error ?? '');
       if (/1 per trading day/.test(msg)) {
@@ -159,21 +225,29 @@ async function main() {
       console.log(B('\n\n2. The deposit BOUNCES — the rail returns it\n'));
       const sim = await post(
         '/api/ops/simulate-rail',
-        { outcome: 'returned', customer: 'dana@demo.ledgerly.app' },
+        { outcome: 'returned', customer: SUBJECT_EMAIL },
         'ops@demo.ledgerly.app',
       );
-      console.log(`   ${sim.json.customer} · ${sim.json.statusTo} · pipeline: ${sim.json.pipeline}`);
-      console.log(D(`   ${sim.json.detail ?? ''}`));
+      if (sim.status !== 200) {
+        console.log(R(`   ${sim.json.error ?? JSON.stringify(sim.json).slice(0, 200)}`));
+      } else {
+        console.log(`   ${sim.json.customer} · ${sim.json.statusTo} · pipeline: ${sim.json.pipeline}`);
+        console.log(D(`   ${sim.json.detail ?? ''}`));
+      }
     } else {
       console.log(B('\n\n2. The rail reports the deposit as good funds\n'));
       const sim = await post(
         '/api/ops/simulate-rail',
-        { outcome: 'settled', customer: 'dana@demo.ledgerly.app' },
+        { outcome: 'settled', customer: SUBJECT_EMAIL },
         'ops@demo.ledgerly.app',
       );
-      console.log(`   ${sim.json.customer} · ${sim.json.statusTo} · pipeline: ${sim.json.pipeline}`);
-      console.log(D(`   ${sim.json.detail ?? ''}`));
-      console.log(Y(`\n   SIMULATED: ${sim.json.whatWasSimulated ?? ''}`));
+      if (sim.status !== 200) {
+        console.log(R(`   ${sim.json.error ?? JSON.stringify(sim.json).slice(0, 200)}`));
+      } else {
+        console.log(`   ${sim.json.customer} · ${sim.json.statusTo} · pipeline: ${sim.json.pipeline}`);
+        console.log(D(`   ${sim.json.detail ?? ''}`));
+        console.log(Y(`\n   SIMULATED: ${sim.json.whatWasSimulated ?? ''}`));
+      }
     }
     let after = await balances();
     console.log('');
@@ -213,11 +287,40 @@ async function main() {
     // ---------------------------------------------------------------- 3
     await beat();
     console.log(B('\n\n3. Invest $2,000 into the Growth model — real orders\n'));
-    const inv = await post(
+    let inv = await post(
       '/api/invest',
       { modelId: 'growth', amount: '2000' },
-      'dana@demo.ledgerly.app',
+      SUBJECT_EMAIL,
     );
+
+    // The interesting case, and worth showing rather than engineering around:
+    // our ledger believes the deposit settled (we produced the notification),
+    // while Alpaca's own ACH genuinely has not cleared. The system refuses to
+    // trade on a number the broker does not agree with, and reports BOTH
+    // figures rather than quietly trusting ours.
+    if (inv.status === 422 && String(inv.json.error ?? '').includes('buying power')) {
+      console.log(R('   REFUSED, and correctly so:\n'));
+      console.log(`     our ledger says investable   ${Y(String(inv.json.ourInvestableCash))}`);
+      console.log(`     the broker says buying power ${Y(String(inv.json.brokerBuyingPower))}`);
+      console.log(D(`\n     ${String(inv.json.why ?? '')}`));
+      console.log(
+        D(
+          '\n     Their balance is their ledger; ours is ours. Where they disagree\n' +
+            '     we do not trade. Routing to the pre-funded paper venue instead,\n' +
+            '     which is a real Alpaca sandbox that IS funded.\n',
+        ),
+      );
+      await client.query(
+        `UPDATE customers SET execution_venue = 'paper' WHERE id = $1::uuid`,
+        [customerId],
+      );
+      inv = await post(
+        '/api/invest',
+        { modelId: 'growth', amount: '2000' },
+        SUBJECT_EMAIL,
+      );
+    }
+
     if (inv.status !== 200) {
       console.log(R(`   refused: ${JSON.stringify(inv.json).slice(0, 260)}`));
     } else {
@@ -236,7 +339,7 @@ async function main() {
     console.log(B('\n\n4. An agent proposes a $300 withdrawal — it cannot approve it\n'));
     const { proposeWithdrawal } = await import('../src/lib/agent/tools');
     const proposal = await proposeWithdrawal(client, {
-      customer: 'dana@demo.ledgerly.app',
+      customer: SUBJECT_EMAIL,
       amount: '300',
       reason: 'demo',
       agentId: 'agent:demo',

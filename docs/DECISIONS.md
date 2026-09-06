@@ -1339,3 +1339,41 @@ And the demo *asserted* the expected movement rather than reading it. It printed
 does not read the numbers is worse than no narration: it is confident and wrong.
 It now computes the delta and describes what actually happened, including
 "nothing moved for this customer" when that is the truth.
+
+---
+
+## 2026-09-06T11:00Z — Making the demo repeatable, and the divergence it surfaced
+
+**Two problems with the first version, both worth recording.**
+
+**It was not repeatable.** It hardcoded one customer. But a settled deposit
+cannot be un-settled (the ledger is append-only) and Alpaca allows one ACH
+transfer per account per trading day, so the customer used last time usually
+cannot be used again today. A demo that only works once is not a demo. It now
+picks a customer who can actually move money: one with a deposit already in
+flight, or failing that one who is KYC-approved and bank-linked with their
+allowance intact.
+
+**It surfaced a genuine divergence, which I chose to show rather than engineer
+around.** After the simulated settlement notification, OUR ledger believes the
+money is settled while Alpaca's own ACH has genuinely not cleared. So the invest
+call is refused:
+
+```
+our ledger says investable    $25,000.00
+the broker says buying power       $0.00
+```
+
+That is the correct behaviour and the more interesting demo moment. Their
+balance is their ledger; ours is ours; where they disagree we do not trade, and
+we report both numbers rather than quietly trusting our own. The demo shows the
+refusal, explains it, and then routes to the pre-funded paper venue — which is a
+different real Alpaca sandbox that IS funded — so the rest of the path can run.
+
+Hiding that refusal would have made the demo smoother and the system less
+believable.
+
+**Result:** `npm run demo` now runs end to end and every step moves a number
+that is visible on screen — `$0 -> $25,000` settled on the deposit clearing, four
+real orders accepted at the broker with real order ids, and `-$300` on an
+agent-proposed, human-approved withdrawal.
