@@ -292,7 +292,19 @@ export async function listApprovals(
             a.requested_at
        FROM approvals a
        LEFT JOIN customers c ON c.id = a.customer_id
-      ORDER BY a.requested_at DESC
+      -- A queue leads with the work, not with settled history. Ordering purely
+      -- by requested_at put executed items — of which there are many, because
+      -- every demo run adds more — above the handful of things actually
+      -- awaiting a decision, so the one card a reviewer needs could be well
+      -- below the fold. Pending first, then approved-but-not-paid, then the
+      -- rest; newest first inside each group.
+      ORDER BY
+        CASE a.status
+          WHEN 'pending'  THEN 0
+          WHEN 'approved' THEN 1
+          ELSE 2
+        END,
+        a.requested_at DESC
       LIMIT $1`,
     [limit],
   );

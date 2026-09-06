@@ -40,6 +40,9 @@ export default async function ApprovalsPage() {
 
   const pending = queue.filter((q) => q.status === 'pending').length;
   const fromAgents = queue.filter((q) => q.requested_by_kind === 'agent').length;
+  const agentPending = queue.filter(
+    (q) => q.requested_by_kind === 'agent' && q.status === 'pending',
+  ).length;
 
   return (
     <>
@@ -62,8 +65,14 @@ export default async function ApprovalsPage() {
           <div className="stat-label">Awaiting a checker</div>
         </div>
         <div className="card">
-          <div className="stat">{fromAgents}</div>
-          <div className="stat-label">Raised by an agent</div>
+          <div className="stat">{agentPending}</div>
+          <div className="stat-label">Agent proposals awaiting a human</div>
+          {/* The old stat counted every agent row ever, which was 15 while all
+              15 were already executed — sitting beside "awaiting a checker" it
+              read as though agent work were queued when none was. */}
+          <div className="dim" style={{ fontSize: 11.5, marginTop: 4 }}>
+            {fromAgents} raised by an agent in total
+          </div>
         </div>
         <div className="card">
           <div className="stat" style={{ fontSize: 14, lineHeight: 1.5 }}>

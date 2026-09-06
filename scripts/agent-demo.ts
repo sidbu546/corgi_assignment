@@ -262,6 +262,27 @@ async function main() {
       `USD nets to ${tb[0].cents}`,
     );
 
+    // ---------------------------------------------------------------------
+    // Leave one behind, PENDING, for the browser.
+    //
+    // Everything above proves the boundaries and then consumes its own
+    // evidence: the agent's proposal is approved and executed as part of the
+    // happy path, so nothing agent-raised survives in the queue. The single
+    // most important state to be able to SHOW — an agent has asked, a human
+    // must decide — was the one state /approvals could never display.
+    // ---------------------------------------------------------------------
+    const standing = await proposeWithdrawal(client, {
+      customer: CUSTOMER,
+      amount: '150',
+      reason: 'left pending on purpose, so the queue always has a live example',
+      agentId: AGENT,
+    });
+    check(
+      'a pending agent proposal is left in the queue for the browser',
+      standing.status === 'pending',
+      'visit /approvals as ops to approve and execute it — that is the maker-checker demo',
+    );
+
     console.log(`\n${'='.repeat(72)}`);
     if (failures > 0) {
       console.log(`${failures} check(s) FAILED`);
@@ -269,6 +290,11 @@ async function main() {
     }
     console.log(
       'An agent may read anything and propose anything. It may not decide, move, or erase.',
+    );
+    console.log(
+      `\nOne agent proposal for $150.00 is now PENDING in /approvals. Sign in as` +
+        `\n${MAKER} and you will be able to approve it: you did not raise it, the` +
+        `\nagent did, and an agent proposal always needs a human at any amount.`,
     );
   } finally {
     client.release();
