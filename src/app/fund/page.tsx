@@ -26,9 +26,10 @@ export default async function FundPage() {
       account_name: string;
       name_match: boolean | null;
       alpaca_relationship_id: string | null;
+      is_active: boolean;
     }>(
       `SELECT institution, account_mask, account_name, name_match,
-              alpaca_relationship_id
+              alpaca_relationship_id, is_active
          FROM bank_links WHERE customer_id = $1::uuid
         ORDER BY recorded_at DESC LIMIT 1`,
       [customer.id],

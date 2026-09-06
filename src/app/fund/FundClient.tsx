@@ -15,6 +15,14 @@ interface BankLink {
   account_name: string;
   name_match: boolean | null;
   alpaca_relationship_id: string | null;
+  /**
+   * A link can exist, carry a relationship id, and still not be usable — it may
+   * have been deactivated, or belong to a brokerage account the customer no
+   * longer has. Presence of a relationship id is therefore not the same as
+   * being linked, and treating it that way left the page showing "linked" with
+   * no way to link again.
+   */
+  is_active: boolean;
 }
 
 export default function FundClient({
@@ -62,7 +70,7 @@ export default function FundClient({
       {/* ---------------- 1. link a bank ---------------- */}
       <h2>1 · Link a bank through open banking</h2>
 
-      {bankLink?.alpaca_relationship_id ? (
+      {bankLink?.is_active && bankLink.alpaca_relationship_id ? (
         <div className="card" style={{ marginBottom: 12 }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <span className="badge badge-live">linked</span>
