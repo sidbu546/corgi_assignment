@@ -50,6 +50,28 @@ async function probeAll(): Promise<Probe[]> {
       return `${asset.symbol} on ${asset.exchange}, fractionable=${asset.fractionable}`;
     }),
 
+    // The execution venue is a LIVE integration and must be probed like one.
+    // It was previously left out, and the row then rendered "LIVE" beside
+    // "not probed — simulator", which is both a contradiction and an
+    // understatement: this is the endpoint that actually places orders.
+    timed('brokerage_paper', async () => {
+      const res = await fetch(`${process.env.ALPACA_PAPER_BASE_URL}/v2/account`, {
+        headers: {
+          'APCA-API-KEY-ID': process.env.ALPACA_PAPER_KEY_ID ?? '',
+          'APCA-API-SECRET-KEY': process.env.ALPACA_PAPER_SECRET ?? '',
+        },
+        signal: withTimeout(8000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const account = await res.json();
+      const money = (v: string) =>
+        `$${Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+      return (
+        `account ${account.account_number}, ${account.status}, ` +
+        `buying power ${money(account.buying_power)}`
+      );
+    }),
+
     timed('funding', async () => {
       const res = await fetch('https://sandbox.plaid.com/institutions/get', {
         method: 'POST',
@@ -161,7 +183,14 @@ export default async function IntegrationsPage() {
                         {probe.ok ? '200 ' : 'FAIL '}
                       </span>
                     ) : (
-                      <span className="dim">not probed — simulator</span>
+                      // Say WHY there is no probe. Assuming "unprobed means
+                      // simulator" mislabelled a live integration as a fake one
+                      // the moment a live slot was added without a probe.
+                      <span className="dim">
+                        {s.mode === 'simulated'
+                          ? 'not probed — simulator'
+                          : 'not probed'}
+                      </span>
                     )}
                     {probe?.detail}
                   </td>
