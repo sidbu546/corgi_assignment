@@ -96,7 +96,14 @@ async function main() {
       let verdict = '';
 
       if (!c.alpaca_account_id) {
-        verdict = 'no Alpaca account — cannot deposit';
+        // No brokerage account is not a dead end — it is the BEST state to be
+        // in. Linking a bank opens one, and a new account has an unused ACH
+        // allowance, which a customer who has already deposited does not.
+        verdict =
+          c.kyc === 'approved'
+            ? 'READY — link a bank on /fund; that opens the account, with a fresh allowance'
+            : `KYC is ${c.kyc ?? 'not_started'} — verify on /portfolio first`;
+        if (c.kyc === 'approved') ready.push(c.email);
       } else {
         const result = await transfersFor(c.alpaca_account_id);
         if ('error' in result) {
