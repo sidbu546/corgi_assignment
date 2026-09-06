@@ -19,6 +19,7 @@ import { applyCorrectedClose, publishReturn } from '@/lib/restatement';
 import { resolvePrice } from '@/lib/providers/marketdata';
 import { formatPercent } from '@/lib/returns';
 import { formatCents } from '@/lib/money';
+import Decimal from 'decimal.js';
 import type { MarketDate } from '@/lib/calendar';
 
 export const runtime = 'nodejs';
@@ -92,7 +93,51 @@ export async function POST(request: Request) {
       if (!before) throw new Error(`no price for ${symbol} on ${date}`);
 
       const pct = body.pct ?? -3.5;
-      const corrected = before.priceCents.times(1 + pct / 100).toDecimalPlaces(6);
+
+      // ANCHOR THE CORRECTION TO THE ORIGINAL CLOSE, NOT THE CURRENT ONE.
+      //
+      // "The custodian says the close was wrong by -3.5%" means wrong relative
+      // to what was originally published. Computing it from the current price
+      // instead made every press compound: pressing this button ten times
+      // walked VOO's 2026-08-31 close from 56,405.97 down to 39,500.10 cents,
+      // a 30% drift, and wrote eleven versions claiming the custodian had
+      // corrected the same close ten separate times. Each individual row was
+      // honest; the sequence described something that never happened.
+      //
+      // Anchored this way the operation is idempotent in value: press it once
+      // or twenty times and the corrected close is the same number, so the
+      // scenario can be demonstrated repeatedly without the demo drifting.
+      const { rows: originalRows } = await client.query<{ price_cents: string }>(
+        `SELECT price_cents FROM prices
+          WHERE symbol = $1 AND price_date = $2::date AND NOT is_correction
+          ORDER BY recorded_at ASC LIMIT 1`,
+        [symbol, date],
+      );
+      const anchor = originalRows[0]
+        ? new Decimal(originalRows[0].price_cents)
+        : before.priceCents;
+
+      const corrected = anchor.times(1 + pct / 100).toDecimalPlaces(6);
+
+      // Already at the corrected value: say so rather than writing an identical
+      // row that claims a fresh correction arrived.
+      if (corrected.equals(before.priceCents)) {
+        return {
+          symbol,
+          date,
+          wasPrice: before.priceCents.div(100).toFixed(4),
+          nowPrice: corrected.div(100).toFixed(4),
+          pct,
+          revaluedDays: 0,
+          restated: [],
+          alreadyCorrected: true,
+          note:
+            `${symbol}'s close on ${date} is already the corrected value ` +
+            `(${corrected.div(100).toFixed(4)}, which is ${pct}% off the original ` +
+            `${anchor.div(100).toFixed(4)}). Nothing was written: a second identical ` +
+            `correction would claim the custodian reported again when it did not.`,
+        };
+      }
 
       const restatement = await applyCorrectedClose(client, {
         symbol,
@@ -127,7 +172,9 @@ export async function POST(request: Request) {
       by: session.email,
       ...result,
       note:
-        result.restated.length === 0
+        'alreadyCorrected' in result && result.alreadyCorrected
+          ? result.note
+          : result.restated.length === 0
           ? 'Nothing had been published for a period ending on this date, so there ' +
             'was nothing to restate. Publish a return first.'
           : 'Nothing was updated. The corrected price supersedes the old row, each ' +
