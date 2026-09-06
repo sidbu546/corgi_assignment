@@ -35,6 +35,7 @@ export interface CustomerRecord {
   email: string;
   alpaca_account_id: string | null;
   plaid_item_id: string | null;
+  persona_inquiry_id: string | null;
 }
 
 export async function loadCustomer(
@@ -42,7 +43,8 @@ export async function loadCustomer(
   customerId: string,
 ): Promise<CustomerRecord> {
   const { rows } = await client.query<CustomerRecord>(
-    `SELECT id, legal_name, email, alpaca_account_id, plaid_item_id
+    `SELECT id, legal_name, email, alpaca_account_id, plaid_item_id,
+            persona_inquiry_id
        FROM customers WHERE id = $1::uuid`,
     [customerId],
   );

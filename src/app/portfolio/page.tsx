@@ -5,6 +5,7 @@ import { inceptionToDate } from '@/lib/performance';
 import { formatCents, formatUnits } from '@/lib/money';
 import { formatPercent } from '@/lib/returns';
 import { marketDateOf } from '@/lib/calendar';
+import KycClient from './KycClient';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -57,7 +58,19 @@ export default async function PortfolioPage() {
       [session.customerId],
     );
 
-    return { kyc: kyc[0] ?? null, model: model[0] ?? null, mine, perf, activity };
+    const { rows: cust } = await client.query<{ persona_inquiry_id: string | null }>(
+      `SELECT persona_inquiry_id FROM customers WHERE id = $1::uuid`,
+      [session.customerId],
+    );
+
+    return {
+      kyc: kyc[0] ?? null,
+      model: model[0] ?? null,
+      mine,
+      perf,
+      activity,
+      inquiryId: cust[0]?.persona_inquiry_id ?? null,
+    };
   });
 
   const kycStatus = data.kyc?.status ?? 'not_started';
@@ -103,6 +116,10 @@ export default async function PortfolioPage() {
             </p>
           )}
         </div>
+      )}
+
+      {!canTransact && (
+        <KycClient status={kycStatus} inquiryId={data.inquiryId} />
       )}
 
       {/* --------------- headline numbers --------------- */}

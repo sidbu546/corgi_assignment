@@ -1018,3 +1018,44 @@ trading days. When it does, the bridge books it to settled cash with no further
 work, because that path is already built and replay-tested. The script says so
 in its own output rather than ending on a green tick that implies more than it
 did.
+
+---
+
+## 2026-09-06T04:05Z — The restatement moved out of the terminal, and KYC into the UI
+
+**Why.** Asked whether the full loop was demoable end to end, the honest answer
+was no: the restatement — the highest-signal thing in this track — existed only
+as `npm run restate`, and starting a KYC inquiry existed only as a script.
+Dropping to a shell mid-demo to show your best feature is a bad trade.
+
+**`/restatements`** (ops) now runs the whole scenario from buttons: publish the
+August return, then apply a corrected close. It shows as-published beside
+as-corrected with the delta, the price supersession (both rows, original never
+overwritten), and every revaluation the correction triggered.
+
+It also states the telescoping property on the page rather than hiding it, and
+the live output demonstrates it in one view:
+
+```
+Dana Whitfield  2026-08-01 .. 2026-08-31  +43.96% -> +41.22%  (-2.74%, -$698.84)
+Dana Whitfield  2026-08-01 .. 2026-09-05  +46.32% -> +46.32%  (+0.00%,    $0.00)
+```
+
+Same correction, two periods. The one ENDING on the corrected date moves; the
+one SPANNING it does not, because with no external flows the chain collapses to
+end-value over start-value and the interior value cancels.
+
+**`/portfolio`** now lets an unverified customer start a real Persona inquiry,
+with two sandbox controls to drive it to approved or declined.
+
+**The design point that makes those controls safe**, and it is worth being
+precise about: they call PERSONA'S own decision endpoints. They do not write
+`kyc_events`. Persona decides, Persona emits a signed webhook, and our status
+changes only when that webhook arrives and verifies — so the response
+deliberately reports our status as still being the OLD one, with a note
+explaining the lag.
+
+If those buttons wrote our status directly they would be a bypass of the
+identity gate wearing a UI. Instead they are a way to make Persona produce an
+outcome on demand, which is what lets the declined path be demonstrated at all.
+A gate that has only ever been seen to open is not a gate.
