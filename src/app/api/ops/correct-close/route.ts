@@ -15,7 +15,7 @@
 import { NextResponse } from 'next/server';
 import { transaction } from '@/lib/db';
 import { requireOps } from '@/lib/session';
-import { applyCorrectedClose, publishReturn } from '@/lib/restatement';
+import { applyCorrectedClose, publishReturn, restoreOriginalClose } from '@/lib/restatement';
 import { resolvePrice } from '@/lib/providers/marketdata';
 import { formatPercent } from '@/lib/returns';
 import { formatCents } from '@/lib/money';
@@ -46,7 +46,13 @@ export async function POST(request: Request) {
     if (body.action === 'publish') {
       const periodStart = (body.periodStart ?? '2026-08-01') as MarketDate;
 
-      const published = await transaction(async (client) => {
+      const outcome = await transaction(async (client) => {
+        // Publishing must record the figure as it stood BEFORE any correction,
+        // or the correction that follows has nothing to change. If a previous
+        // run left the corrected price in effect, put the original back first —
+        // recorded as a scenario reset, never as a custodian correction.
+        const reset = await restoreOriginalClose(client, { symbol, date });
+
         const { rows: customers } = await client.query<{
           id: string;
           legal_name: string;
@@ -73,14 +79,28 @@ export async function POST(request: Request) {
             endValue: formatCents(result.endValueCents),
           });
         }
-        return out;
+        return { published: out, reset };
       });
 
       return NextResponse.json({
         ok: true,
         action: 'publish',
         period: `${body.periodStart ?? '2026-08-01'} .. ${date}`,
-        published,
+        published: outcome.published,
+        restoredOriginalClose: outcome.reset.restored
+          ? {
+              symbol,
+              date,
+              fromCents: outcome.reset.fromCents,
+              toCents: outcome.reset.toCents,
+              daysRevalued: outcome.reset.revalued,
+              why:
+                'A previous run had left the corrected close in effect. It was ' +
+                'restored to the original so this published figure is a genuine ' +
+                'pre-correction number. Recorded as a scenario reset, not as a ' +
+                'custodian correction, and no already-published figure was restated.',
+            }
+          : null,
         note:
           'This is now what we have told the customer. It must remain answerable ' +
           'forever, whatever we learn afterwards.',
@@ -143,7 +163,13 @@ export async function POST(request: Request) {
         symbol,
         date,
         correctedPriceCents: corrected.toFixed(6),
-        note: body.note ?? `Custodian issued a corrected closing price (${pct}%).`,
+        // State the percentage against the ORIGINAL, which is what it is
+        // measured from. Saying "(-3.5%)" beside a transition that reads
+        // 39500 -> 54431 invited exactly the question it should have answered.
+        note:
+          body.note ??
+          `Custodian issued a corrected closing price: ${pct}% off the original ` +
+            `close of ${anchor.div(100).toFixed(4)}.`,
       });
 
       return {

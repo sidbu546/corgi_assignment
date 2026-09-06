@@ -145,6 +145,84 @@ export interface RestatementResult {
  * would leave the cumulative figure quietly incorrect — the subtlest possible
  * way to fail this test.
  */
+/**
+ * Put the close back to the value it originally had, and revalue.
+ *
+ * WHY A DEMO NEEDS THIS. The scenario is "we published a figure, THEN a
+ * correction arrived". That only works if the price is at its original value
+ * when the figure is published. Once the correction has been applied, the
+ * corrected price is in effect, so publishing again records the already-
+ * corrected number and the correction that follows changes nothing — the second
+ * half of the scenario silently becomes a no-op.
+ *
+ * This is a SCENARIO RESET, and it says so in the price row's note. It is not a
+ * custodian correction and must never be described as one: the whole point of
+ * the restatement machinery is that the record says who said what and why.
+ *
+ * It deliberately does NOT restate published returns. Restoring the price is
+ * setup for the demo, not a new fact about the market, so figures already
+ * published stay exactly as published.
+ */
+export async function restoreOriginalClose(
+  client: PoolClient,
+  input: { symbol: string; date: MarketDate },
+): Promise<{ restored: boolean; fromCents: string | null; toCents: string; revalued: number }> {
+  const { rows: originalRows } = await client.query<{ price_cents: string }>(
+    `SELECT price_cents FROM prices
+      WHERE symbol = $1 AND price_date = $2::date AND NOT is_correction
+      ORDER BY recorded_at ASC LIMIT 1`,
+    [input.symbol, input.date],
+  );
+  if (!originalRows[0]) return { restored: false, fromCents: null, toCents: '0', revalued: 0 };
+
+  const original = new Decimal(originalRows[0].price_cents);
+  const current = await resolvePrice(client, { symbol: input.symbol, asOf: input.date });
+  if (current && current.priceCents.equals(original)) {
+    return {
+      restored: false,
+      fromCents: current.priceCents.toFixed(6),
+      toCents: original.toFixed(6),
+      revalued: 0,
+    };
+  }
+
+  const correction = await publishCorrection(client, {
+    symbol: input.symbol,
+    date: input.date,
+    correctedPriceCents: toPrice(original.toFixed(6)),
+    note:
+      `SCENARIO RESET — restoring the original close for ${input.symbol} on ` +
+      `${input.date} so the publish-then-correct sequence can be demonstrated ` +
+      `again. This is not a custodian correction.`,
+    source: 'scenario.reset',
+  });
+
+  const today = marketDateOf(new Date());
+  let revalued = 0;
+  for (const date of calendarDaysBetween(input.date, today)) {
+    const { rows: previous } = await client.query<{ id: string }>(
+      `SELECT id FROM valuation_runs
+        WHERE as_of_date = $1::date ORDER BY recorded_at DESC LIMIT 1`,
+      [date],
+    );
+    if (!previous[0]) continue;
+    await runValuation(client, {
+      asOf: date,
+      trigger: 'restatement',
+      note: `scenario reset: original close for ${input.symbol} on ${input.date}`,
+      supersedesId: previous[0].id,
+    });
+    revalued++;
+  }
+
+  return {
+    restored: true,
+    fromCents: correction.previousCents,
+    toCents: original.toFixed(6),
+    revalued,
+  };
+}
+
 export async function applyCorrectedClose(
   client: PoolClient,
   input: {
