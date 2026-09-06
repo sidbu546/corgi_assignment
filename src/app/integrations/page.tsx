@@ -82,7 +82,7 @@ async function probeAll(): Promise<Probe[]> {
       const rows = await query<{ alpaca_account_id: string }>(
         `SELECT alpaca_account_id FROM customers
           WHERE alpaca_account_id IS NOT NULL
-          ORDER BY recorded_at DESC LIMIT 1`,
+          ORDER BY created_at DESC LIMIT 1`,
       );
       if (!rows[0]) return 'no brokerage account yet — nothing to send from';
 
