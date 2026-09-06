@@ -39,9 +39,29 @@ export const PROVIDER_SLOTS: ProviderSlot[] = [
     mode: 'live',
     endpoint: 'https://broker-api.sandbox.alpaca.markets',
     note:
-      'Real accounts, real order lifecycle, real fills. Orders are submitted to ' +
-      'Alpaca and fills arrive by webhook.',
+      'A brokerage account PER CUSTOMER, in their own name — the correct model ' +
+      'for a retail investing product. Real accounts, real ACH relationships, ' +
+      'real orders. Fills and transfer transitions arrive over Alpaca SSE and ' +
+      'are bridged into our webhook pipeline (Alpaca offers no webhook ' +
+      'registration; verified, every such endpoint 404s).',
     requiredEnv: ['ALPACA_BROKER_KEY_ID', 'ALPACA_BROKER_SECRET'],
+  },
+  {
+    id: 'brokerage_paper',
+    slot: 'Brokerage — execution venue (paper)',
+    provider: 'Alpaca Trading API, paper account',
+    mode: 'live',
+    endpoint: 'https://paper-api.alpaca.markets',
+    note:
+      'A second REAL Alpaca sandbox, pre-funded with $100,000, used so orders ' +
+      'can reach a broker while Broker API ACH is still settling. Verified ' +
+      'paper-only: the key is prefixed PK and the same key returns 401 against ' +
+      'the live endpoint. ' +
+      'It is ONE account shared by every customer routed to it — an OMNIBUS ' +
+      'arrangement, labelled as such on every order. The broker cannot tell our ' +
+      'customers apart, so our ledger is the only per-customer record, which is ' +
+      'precisely why reconciliation matters more here rather than less.',
+    requiredEnv: ['ALPACA_PAPER_KEY_ID', 'ALPACA_PAPER_SECRET'],
   },
   {
     id: 'kyc',

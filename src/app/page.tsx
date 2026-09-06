@@ -273,9 +273,14 @@ export default async function Home() {
                 'npm run happy-path — 14/14 against 3 live providers',
               ],
               [
-                'A FILLED Alpaca order',
+                'Real orders accepted and resting at a broker',
+                'done',
+                'Alpaca paper venue, pre-funded — 4 real order ids, awaiting the open',
+              ],
+              [
+                'A FILLED order',
                 'blocked',
-                'orders submit for real and are correctly refused pre-settlement; sandbox ACH settles on trading days',
+                'Alpaca’s own clock: next open Tue 8 Sep 09:30 ET. Monday is Labor Day.',
               ],
               ['MCP agent surface', 'not started', '—'],
               ['Maker-checker on money-out', 'partial', 'schema + queue; no execution path yet'],

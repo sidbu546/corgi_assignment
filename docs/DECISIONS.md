@@ -1059,3 +1059,58 @@ If those buttons wrote our status directly they would be a bypass of the
 identity gate wearing a UI. Instead they are a way to make Persona produce an
 outcome on demand, which is what lets the declined path be demonstrated at all.
 A gate that has only ever been seen to open is not a gate.
+
+---
+
+## 2026-09-06T05:00Z — A second execution venue, and why it is labelled OMNIBUS
+
+**Decided.** Added Alpaca's Trading API **paper** account as a second live
+execution venue alongside Broker API, selectable per customer and recorded per
+order.
+
+**Why.** Broker API is the right account model — a brokerage account per
+customer, in their own name — but its sandbox settles ACH on trading days, so a
+deposit made at a weekend cannot fund an order. The paper account arrives
+pre-funded with $100,000, so an order can actually reach a broker today.
+
+**Verified paper-only before using it, three ways**, because "live-mode API
+keys" is an automatic fail and a prefix is not proof:
+
+1. the key is prefixed `PK` (live keys are `AK`)
+2. the paper endpoint returns account `PA36XI98LTKC`, cash 100000
+3. **the same key against `api.alpaca.markets` returns 401** — it has no live
+   access at all
+
+There is also a runtime guard: the paper client refuses to send a key that does
+not start with `PK`.
+
+**I did NOT complete Alpaca's account application to get these.** Clicking "API"
+in their dashboard funnels you into a live brokerage application asking for SSN,
+date of birth and a financial profile. That is real PII and a real regulated
+account — three automatic fails in one form. The keys were already available on
+the paper dashboard without it.
+
+**The honesty problem this creates, and how it is handled.** The paper venue is
+ONE account shared by every customer routed to it. That is an omnibus
+arrangement: the broker cannot tell our customers apart. Pretending otherwise
+would be exactly the kind of quiet misrepresentation this project fails people
+for, so:
+
+- `orders.venue` and `orders.venue_account_ref` record where each order actually
+  went, per order rather than per customer — a customer can be moved between
+  venues, and last week's order must still say where it really executed
+- the API response carries `omnibus: true` and says so in prose
+- the provider registry describes it in full, and the integrations page renders
+  from that registry
+
+**And it sharpens rather than weakens the reconciliation argument.** With an
+omnibus account, OUR ledger is the only record of who owns what. Reconciling
+against the venue matters more in that arrangement, not less.
+
+**Result:** four real orders accepted at a real broker from the deployed app —
+BND $100, VOO $550, VTI $150, VXUS $200, allocated by largest-remainder across
+the Growth model and summing to exactly $1,000.00. They rest until the open.
+
+**Alpaca's own clock confirms my market calendar independently:**
+`next_open: 2026-09-08T09:30:00-04:00`. Monday 7 September is Labor Day, which
+is precisely the long-weekend case the calendar tests already cover.

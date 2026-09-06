@@ -26,7 +26,13 @@ import { NextResponse } from 'next/server';
 import Decimal from 'decimal.js';
 import { transaction } from '@/lib/db';
 import { requireCustomer } from '@/lib/session';
-import { getTradingAccount, submitOrder } from '@/lib/providers/alpaca';
+import {
+  getVenueAccount,
+  submitVenueOrder,
+  marketClock,
+  paperConfigured,
+  type Venue,
+} from '@/lib/providers/brokerage';
 import { allocate, formatCents, dollarsToCents } from '@/lib/money';
 import { cashPosition } from '@/lib/ledger/read';
 import {
@@ -63,10 +69,22 @@ export async function POST(request: Request) {
       const customer = await loadCustomer(client, session.customerId);
       await assertMayTransact(client, customer.id);
 
-      if (!customer.alpaca_account_id) {
+      const { rows: venueRows } = await client.query<{ execution_venue: Venue }>(
+        `SELECT execution_venue FROM customers WHERE id = $1::uuid`,
+        [customer.id],
+      );
+      const venue: Venue = venueRows[0]?.execution_venue ?? 'broker';
+
+      if (venue === 'broker' && !customer.alpaca_account_id) {
         throw new OnboardingError(
           'no_brokerage_account',
           'No brokerage account on file. Link a bank first.',
+        );
+      }
+      if (venue === 'paper' && !paperConfigured()) {
+        throw new OnboardingError(
+          'no_brokerage_account',
+          'This customer routes to the paper venue, which is not configured.',
         );
       }
 
@@ -99,9 +117,10 @@ export async function POST(request: Request) {
       // both numbers side by side. A divergence between our ledger and the
       // broker's is not an error to swallow; it is exactly the thing the
       // reconciliation screen exists to surface.
-      const brokerAccount = await getTradingAccount(customer.alpaca_account_id).catch(
-        () => null,
-      );
+      const brokerAccount = await getVenueAccount(
+        venue,
+        customer.alpaca_account_id,
+      ).catch(() => null);
 
       if (!brokerAccount) {
         return NextResponse.json(
@@ -114,7 +133,7 @@ export async function POST(request: Request) {
         );
       }
 
-      const brokerBuyingPowerCents = dollarsToCents(brokerAccount.buying_power || '0');
+      const brokerBuyingPowerCents = dollarsToCents(brokerAccount.buyingPower || '0');
 
       if (amountCents > brokerBuyingPowerCents) {
         return NextResponse.json(
@@ -178,15 +197,24 @@ export async function POST(request: Request) {
         const { rows: orderRows } = await client.query<{ id: string }>(
           `INSERT INTO orders
              (customer_id, symbol, side, requested_cents, client_order_id,
-              submitted_by, effective_at)
-           VALUES ($1::uuid, $2, 'buy', $3, $4, $5, now())
+              submitted_by, effective_at, venue, venue_account_ref)
+           VALUES ($1::uuid, $2, 'buy', $3, $4, $5, now(), $6::execution_venue, $7)
            RETURNING id`,
-          [customer.id, symbol, notional.toString(), clientOrderId, session.email],
+          [
+            customer.id,
+            symbol,
+            notional.toString(),
+            clientOrderId,
+            session.email,
+            venue,
+            brokerAccount.reference,
+          ],
         );
 
         try {
-          const order = await submitOrder({
-            accountId: customer.alpaca_account_id,
+          const order = await submitVenueOrder({
+            venue,
+            brokerAccountId: customer.alpaca_account_id,
             symbol,
             side: 'buy',
             notionalUsd: (Number(notional) / 100).toFixed(2),
@@ -195,20 +223,20 @@ export async function POST(request: Request) {
 
           await client.query(
             `UPDATE orders SET broker_order_id = $2 WHERE id = $1::uuid`,
-            [orderRows[0].id, order.id],
+            [orderRows[0].id, order.brokerOrderId],
           );
           await client.query(
             `INSERT INTO order_events (order_id, kind, broker_event_id, raw, effective_at)
              VALUES ($1::uuid, 'submitted', $2, $3::jsonb, now())
              ON CONFLICT (broker_event_id) DO NOTHING`,
-            [orderRows[0].id, `submit-${order.id}`, JSON.stringify(order)],
+            [orderRows[0].id, `submit-${order.brokerOrderId}`, JSON.stringify(order)],
           );
 
           submitted.push({
             symbol,
             notional: formatCents(notional),
             clientOrderId,
-            brokerOrderId: order.id,
+            brokerOrderId: order.brokerOrderId,
             status: order.status,
           });
         } catch (error) {
@@ -235,16 +263,29 @@ export async function POST(request: Request) {
       }
 
       const accepted = submitted.filter((s) => s.status !== 'rejected').length;
+      const clock = await marketClock().catch(() => null);
 
       return NextResponse.json({
         ok: accepted > 0,
         modelId: body.modelId,
         amount: formatCents(amountCents),
+        venue,
+        venueAccount: brokerAccount.reference,
+        omnibus: brokerAccount.omnibus,
+        marketOpen: clock?.isOpen ?? null,
+        nextMarketOpen: clock?.nextOpen ?? null,
         orders: submitted,
         note:
           'Orders are recorded as instructions. Positions, cost basis and tax ' +
-          'lots appear only when a fill arrives through the webhook pipeline — ' +
-          'an unfilled order is not a holding.',
+          'lots appear only when a fill arrives — an unfilled order is not a ' +
+          'holding.' +
+          (clock && !clock.isOpen
+            ? ` The market is shut; these rest at the broker until ${clock.nextOpen}.`
+            : '') +
+          (brokerAccount.omnibus
+            ? ' This venue is a shared OMNIBUS account: the broker cannot tell our ' +
+              'customers apart, so our ledger is the only per-customer record.'
+            : ''),
       });
     });
   } catch (error) {
