@@ -264,10 +264,24 @@ export async function executeApproval(
     source: 'approval',
     sourceRef: approval.id,
     createdBy: input.executedBy,
+    // WHAT THIS ENTRY DOES AND DOES NOT CLAIM.
+    //
+    // It records the instruction and moves the money on OUR books. It does not
+    // create an outgoing ACH at Alpaca, and saying so here rather than only on
+    // a status page is the same rule the deposit settlement follows: the ledger
+    // never claims a rail did something it did not.
+    //
+    // Nor could it. Alpaca reports this account as cash 0 and refuses an
+    // outgoing transfer, because the incoming deposit is still
+    // SENT_TO_CLEARING. Money cannot leave an account nothing has arrived in.
     narrative:
       `Withdrawal of ${formatCents(amount)} executed. Requested by ` +
       `${approval.requested_by} (${approval.requested_by_kind}), approved by ` +
-      `${approval.decided_by}.`,
+      `${approval.decided_by}, executed by ${input.executedBy}. ` +
+      `[LEDGER ONLY — no outgoing ACH was created at the broker. The incoming ` +
+      `deposit is still SENT_TO_CLEARING, so Alpaca holds no settled cash for ` +
+      `this account and refuses an outgoing transfer. The approval controls ` +
+      `around this instruction are real; the rail out is not.]`,
     lines: [
       usd('assets:cash:settled', -amount, {
         customerId: approval.customer_id,
