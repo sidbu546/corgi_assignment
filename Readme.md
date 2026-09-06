@@ -61,14 +61,22 @@ commit.
 
 | Slot | Provider | Mode | Notes |
 |---|---|---|---|
-| Brokerage & custody | Alpaca **Broker API** sandbox | 🟢 **LIVE** | Real accounts, real order lifecycle, real fills. Verified end to end. |
-| Identity (KYC) | Persona sandbox | 🟢 **LIVE** | Real hosted inquiry flow. Approved / pending / declined all reachable via Persona test identities. |
-| Bank linking & funding | Plaid sandbox | 🟢 **LIVE** | Real Link flow, real auth + identity products. |
-| Market data | Alpaca Market Data | 🟢 **LIVE** | Daily closes drive valuation. Stale prices surfaced with an explicit age. |
-| Custodian file | Built in-house | 🟡 **SIMULATED** | Ships the morning positions/cash/transactions file and deliberately generates the late dividend, the corrected close, and a tampered position. |
+| Brokerage & custody | Alpaca **Broker API** sandbox | 🟢 **LIVE** | A brokerage account **per customer**, in their own name. Real accounts, real ACH relationships, real orders. |
+| Brokerage — execution venue | Alpaca **Trading API paper** | 🟢 **LIVE** | A second real sandbox, pre-funded, so orders reach a broker while ACH settles. **One shared OMNIBUS account** — labelled on every order. |
+| Identity (KYC) | Persona sandbox | 🟢 **LIVE** | Real hosted inquiry flow and **real signed webhooks**. Approved / pending / declined all reachable. |
+| Bank linking & funding | Plaid sandbox | 🟢 **LIVE** | Real Link flow, real auth + identity. The account owner is checked against the identity on file before funding. |
+| Market data | Built in-house | 🟡 **SIMULATED** | Broker sandbox keys are **not entitled** to Alpaca's market data API (401 on every auth form). The brief permits this slot to be simulated. Owning it is also what makes a **corrected close on demand** possible. |
+| Custodian file | Built in-house | 🟡 **SIMULATED** | Ships the morning positions/cash/transactions file and deliberately generates the late dividend and a tampered position. |
 | ACH returns | Built in-house | 🟡 **SIMULATED** | Plaid originates the deposit but will not bounce it days later with an R01. The simulator produces the return. |
 
-The brief requires **at least two** live integrations. This has **four**.
+**On the omnibus venue, stated plainly:** the paper account is one account
+shared by every customer routed to it — the broker cannot tell them apart. Every
+order records which venue executed it (`orders.venue`), and the API says
+`omnibus: true`. This *sharpens* the case for reconciliation rather than
+weakening it: in an omnibus arrangement, our ledger is the only record of who
+owns what.
+
+The brief requires **at least two** live integrations. This has **four**, across three providers.
 
 **No real personal data** is submitted to any provider — only documented test
 identities. **No live-mode keys**, no real money, no secrets in the repository.
