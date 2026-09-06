@@ -94,10 +94,14 @@ export async function POST(request: Request) {
             [customer.id, periodStart, date],
           );
 
+          // Compare at the precision the column actually stores. publishReturn
+          // writes twr.toFixed(12), so comparing the stored value against a
+          // full-precision Decimal never matches and every press wrote a
+          // duplicate row anyway.
           const unchanged =
             !reset.restored &&
             standing[0] !== undefined &&
-            new Decimal(standing[0].twr).equals(perf.twr) &&
+            new Decimal(standing[0].twr).equals(new Decimal(perf.twr.toFixed(12))) &&
             standing[0].end_value_cents === perf.endValueCents;
 
           if (unchanged) {
