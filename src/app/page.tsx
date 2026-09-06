@@ -179,7 +179,7 @@ export default async function Home() {
                   s.disabled
                     ? 'badge-down'
                     : s.mode === 'blocked'
-                      ? 'badge-sim'
+                      ? 'badge-blocked'
                       : s.mode === 'live'
                         ? s.configured
                           ? 'badge-live'

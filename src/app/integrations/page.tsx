@@ -191,7 +191,7 @@ export default async function IntegrationsPage() {
                         s.disabled
                           ? 'badge-down'
                           : s.mode === 'blocked'
-                            ? 'badge-sim'
+                            ? 'badge-blocked'
                             : s.mode === 'live'
                               ? s.configured
                                 ? 'badge-live'
