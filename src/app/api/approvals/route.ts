@@ -10,7 +10,12 @@
 import { NextResponse } from 'next/server';
 import { transaction } from '@/lib/db';
 import { requireOps } from '@/lib/session';
-import { ApprovalError, decideApproval, executeApproval } from '@/lib/approvals';
+import {
+  ApprovalError,
+  decideApproval,
+  executeApproval,
+  raiseWithdrawal,
+} from '@/lib/approvals';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,18 +24,54 @@ export async function POST(request: Request) {
   const session = await requireOps();
   const body = (await request.json().catch(() => ({}))) as {
     approvalId?: string;
-    action?: 'approve' | 'reject' | 'execute';
+    action?: 'approve' | 'reject' | 'execute' | 'raise';
     note?: string;
+    customer?: string;
+    amount?: string;
   };
 
-  if (!body.approvalId || !body.action) {
-    return NextResponse.json(
-      { error: 'approvalId and action are required' },
-      { status: 400 },
-    );
-  }
-
   try {
+    // ---- the maker raises a request -------------------------------------
+    // Its identity comes from the session for the same reason a decision's
+    // does: a body-supplied requester would let one person play both roles.
+    if (body.action === 'raise') {
+      if (!body.customer || !body.amount) {
+        return NextResponse.json(
+          { error: 'customer and amount are required to raise a request' },
+          { status: 400 },
+        );
+      }
+      try {
+        const raised = await transaction((client) =>
+          raiseWithdrawal(client, {
+            customer: body.customer!,
+            amount: body.amount!,
+            reason: body.note,
+            requestedBy: session.email,
+          }),
+        );
+        return NextResponse.json({
+          ok: true,
+          ...raised,
+          note:
+            'Raised, and pending. You cannot approve or execute it — you are the ' +
+            'maker. Sign in as the other ops user to decide it.',
+        });
+      } catch (error) {
+        return NextResponse.json(
+          { error: error instanceof Error ? error.message : String(error) },
+          { status: 422 },
+        );
+      }
+    }
+
+    if (!body.approvalId || !body.action) {
+      return NextResponse.json(
+        { error: 'approvalId and action are required' },
+        { status: 400 },
+      );
+    }
+
     if (body.action === 'execute') {
       const result = await transaction((client) =>
         executeApproval(client, {

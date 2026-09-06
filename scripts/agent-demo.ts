@@ -109,7 +109,7 @@ async function main() {
 
     const proposal = await proposeWithdrawal(client, {
       customer: CUSTOMER,
-      amount: '250.00',
+      amount: '2500.00',
       reason: 'Customer asked to withdraw spare cash',
       agentId: AGENT,
     });
@@ -252,7 +252,7 @@ async function main() {
     // ---------------------------------------------------------------------
     const standing = await proposeWithdrawal(client, {
       customer: CUSTOMER,
-      amount: '150',
+      amount: '1500',
       reason: 'left pending on purpose, so the queue always has a live example',
       agentId: AGENT,
     });
@@ -271,7 +271,7 @@ async function main() {
       'An agent may read anything and propose anything. It may not decide, move, or erase.',
     );
     console.log(
-      `\nOne agent proposal for $150.00 is now PENDING in /approvals. Sign in as` +
+      `\nOne agent proposal for $1,500.00 is now PENDING in /approvals. Sign in as` +
         `\n${MAKER} and you will be able to approve it: you did not raise it, the` +
         `\nagent did, and an agent proposal always needs a human at any amount.`,
     );

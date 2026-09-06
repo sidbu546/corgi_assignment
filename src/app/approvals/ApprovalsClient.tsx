@@ -29,12 +29,44 @@ const STATUS_BADGE: Record<string, string> = {
 export default function ApprovalsClient({
   rows,
   me,
+  threshold,
 }: {
   rows: QueueRow[];
   me: string;
+  threshold: string;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [log, setLog] = useState<Array<{ ok: boolean; title: string; body: string }>>([]);
+  const [customer, setCustomer] = useState('dana@demo.ledgerly.app');
+  const [amount, setAmount] = useState('1500');
+
+  async function raise() {
+    setBusy('raise');
+    try {
+      const response = await fetch('/api/approvals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'raise', customer, amount, note: 'raised by ops' }),
+      });
+      const json = await response.json();
+      setLog((prev) => [
+        {
+          ok: response.ok,
+          title: `Raise request — HTTP ${response.status}`,
+          body: JSON.stringify(json, null, 2),
+        },
+        ...prev,
+      ]);
+      if (response.ok) setTimeout(() => window.location.reload(), 1200);
+    } catch (error) {
+      setLog((prev) => [
+        { ok: false, title: 'Raise request — network error', body: String(error) },
+        ...prev,
+      ]);
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function act(approvalId: string, action: string, label: string) {
     setBusy(`${approvalId}:${action}`);
@@ -57,17 +89,71 @@ export default function ApprovalsClient({
     }
   }
 
+  const actionable = rows.filter(
+    (r) => r.status === 'pending' || r.status === 'approved',
+  );
+  const history = rows.filter(
+    (r) => r.status !== 'pending' && r.status !== 'approved',
+  );
+
+  const input: React.CSSProperties = {
+    padding: '8px 10px',
+    borderRadius: 6,
+    border: '1px solid var(--border-strong)',
+    background: 'var(--bg)',
+    color: 'var(--text)',
+    fontFamily: 'var(--mono)',
+    fontSize: 13,
+  };
+
   return (
     <>
-      {rows.length === 0 && (
+      <div className="card" style={{ marginBottom: 14 }}>
+        <strong style={{ fontSize: 13 }}>Raise a request — you are the maker</strong>
+        <p className="dim" style={{ fontSize: 12.5, margin: '6px 0 10px' }}>
+          Only money-out <strong>above {threshold}</strong> comes through this
+          queue. Anything at or under it is refused here rather than quietly
+          taking a different path. Whatever you raise, you will not be able to
+          approve or execute — that is the point.
+        </p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <label>
+            <div className="stat-label" style={{ marginBottom: 4 }}>Customer</div>
+            <input
+              style={{ ...input, width: 250 }}
+              value={customer}
+              onChange={(e) => setCustomer(e.target.value)}
+              placeholder="dana@demo.ledgerly.app"
+            />
+          </label>
+          <label>
+            <div className="stat-label" style={{ marginBottom: 4 }}>Amount (USD)</div>
+            <input
+              style={{ ...input, width: 140 }}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="1500"
+            />
+          </label>
+          <button
+            className="btn btn-primary"
+            disabled={busy !== null}
+            onClick={() => raise()}
+          >
+            {busy === 'raise' ? 'Raising…' : 'Raise the request'}
+          </button>
+        </div>
+      </div>
+
+      {actionable.length === 0 && (
         <p className="dim">
-          Nothing in the queue. Raise one with the MCP{' '}
-          <span className="mono">propose_withdrawal</span> tool, or{' '}
-          <span className="mono">npm run agent-demo</span>.
+          Nothing awaiting a decision. Raise one above, or run{' '}
+          <span className="mono">npm run agent-demo</span> to have the agent
+          propose one.
         </p>
       )}
 
-      {rows.map((r) => {
+      {actionable.map((r) => {
         // One rule: whoever raised it neither approves nor executes it.
         const isMine = r.requested_by === me;
         const pending = r.status === 'pending';

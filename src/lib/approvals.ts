@@ -24,12 +24,108 @@
 import type { PoolClient } from 'pg';
 import { postEntry, usd } from './ledger/post';
 import { cashPosition } from './ledger/read';
-import { formatCents, type Cents } from './money';
+import { dollarsToCents, formatCents, type Cents } from './money';
 
 export const AGENT_PREFIX = 'agent:';
 
 /** Money-out above this needs a second pair of eyes. */
 export const APPROVAL_THRESHOLD_CENTS: Cents = 1_000_00n;
+
+/**
+ * Money-out enters the queue ONLY above the threshold. Shared by the human
+ * path and the agent path so there is one definition, and mirrored by the
+ * approvals_above_threshold CHECK constraint so it holds from psql too.
+ *
+ * A queue holding $150 requests that need the same two people as a $1,500 one
+ * makes the threshold look decorative. Below it, this is not an approvals
+ * matter at all.
+ */
+export function assertAboveThreshold(amountCents: Cents): void {
+  if (amountCents <= 0n) throw new Error('amount must be positive');
+  if (amountCents <= APPROVAL_THRESHOLD_CENTS) {
+    throw new Error(
+      `${formatCents(amountCents)} is at or under the ${formatCents(
+        APPROVAL_THRESHOLD_CENTS,
+      )} threshold, so it does not go through the approvals queue. Only money-out ` +
+        `above the threshold is a maker-checker matter.`,
+    );
+  }
+}
+
+/**
+ * A human maker raises a withdrawal request. Pending, and not theirs to decide.
+ *
+ * `requestedBy` comes from the caller's SESSION, never from a request body —
+ * a body-supplied requester would let one person play both roles and satisfy
+ * the "different identity" rule trivially.
+ */
+export async function raiseWithdrawal(
+  client: PoolClient,
+  input: {
+    customer: string;
+    amount: string;
+    reason?: string;
+    requestedBy: string;
+  },
+): Promise<{
+  approvalId: string;
+  amount: string;
+  customer: string;
+  requestedBy: string;
+  status: string;
+  withdrawableAtRequestTime: string;
+  exceedsWithdrawable: boolean;
+}> {
+  if (input.requestedBy.startsWith(AGENT_PREFIX)) {
+    throw new Error('use propose_withdrawal for an agent-raised request');
+  }
+
+  const amountCents = dollarsToCents(input.amount);
+  assertAboveThreshold(amountCents);
+
+  const { rows: customers } = await client.query<{ id: string; legal_name: string }>(
+    `SELECT id, legal_name FROM customers
+      WHERE email = $1 OR legal_name = $1 OR id::text = $1
+      LIMIT 1`,
+    [input.customer],
+  );
+  if (!customers[0]) throw new Error(`no customer matching "${input.customer}"`);
+
+  // Carry the balance as it stood when raised, so the checker sees the context
+  // without going to look it up. Execution re-checks it anyway.
+  const cash = await cashPosition(customers[0].id);
+  const exceedsWithdrawable = amountCents > cash.withdrawable;
+
+  const { rows } = await client.query<{ id: string }>(
+    `INSERT INTO approvals
+       (action_type, payload, amount_cents, customer_id, requested_by,
+        requested_by_kind, status)
+     VALUES ('withdrawal', $1::jsonb, $2, $3::uuid, $4, 'human', 'pending')
+     RETURNING id`,
+    [
+      JSON.stringify({
+        customer: customers[0].legal_name,
+        amountCents: amountCents.toString(),
+        reason: input.reason ?? 'raised by ops',
+        withdrawableAtRequestTime: formatCents(cash.withdrawable),
+        exceedsWithdrawable,
+      }),
+      amountCents.toString(),
+      customers[0].id,
+      input.requestedBy,
+    ],
+  );
+
+  return {
+    approvalId: rows[0].id,
+    amount: formatCents(amountCents),
+    customer: customers[0].legal_name,
+    requestedBy: input.requestedBy,
+    status: 'pending',
+    withdrawableAtRequestTime: formatCents(cash.withdrawable),
+    exceedsWithdrawable,
+  };
+}
 
 export class ApprovalError extends Error {
   constructor(

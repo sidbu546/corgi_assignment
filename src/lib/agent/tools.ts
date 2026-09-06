@@ -61,6 +61,7 @@ import Decimal from 'decimal.js';
 import { accountBalances, cashPosition, positions, linesFor } from '../ledger/read';
 import { performance } from '../performance';
 import { formatCents, formatUnits, dollarsToCents } from '../money';
+import { assertAboveThreshold } from '../approvals';
 import { formatPercent } from '../returns';
 import { resolvePrice } from '../providers/marketdata';
 import { marketDateOf, type MarketDate } from '../calendar';
@@ -340,8 +341,10 @@ export async function proposeWithdrawal(
   }
 
   const customer = await resolveCustomer(client, input.customer);
+  // The same rule the human path uses, and the same the CHECK constraint
+  // enforces: money-out enters the queue only above the threshold.
   const amountCents = dollarsToCents(input.amount);
-  if (amountCents <= 0n) throw new Error('amount must be positive');
+  assertAboveThreshold(amountCents);
 
   // Check it against withdrawable cash NOW, so the proposal carries the
   // information a reviewer needs rather than making them go and look.

@@ -89,7 +89,11 @@ export default async function ApprovalsPage() {
       </div>
 
       <h2>Queue</h2>
-      <ApprovalsClient rows={queue} me={session.email} />
+      <ApprovalsClient
+        rows={queue}
+        me={session.email}
+        threshold={formatCents(APPROVAL_THRESHOLD_CENTS)}
+      />
 
       <h2>What an agent is never allowed to do</h2>
       <p>
