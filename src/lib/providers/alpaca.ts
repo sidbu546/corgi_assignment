@@ -291,6 +291,25 @@ export async function createAchRelationshipFromPlaid(input: {
   );
 }
 
+/**
+ * Delete an ACH relationship.
+ *
+ * Alpaca allows exactly ONE active ACH relationship per account
+ * (409 "only one active ach relationship allowed"), so unlinking a bank on our
+ * side without deleting it here makes relinking permanently impossible: our
+ * database says unlinked, the broker says a relationship is still active, and
+ * the customer gets a 409 they cannot act on.
+ */
+export async function deleteAchRelationship(input: {
+  accountId: string;
+  relationshipId: string;
+}): Promise<void> {
+  await request<unknown>(
+    'DELETE',
+    `/v1/accounts/${input.accountId}/ach_relationships/${input.relationshipId}`,
+  );
+}
+
 export interface AlpacaTransfer {
   id: string;
   status: string;
