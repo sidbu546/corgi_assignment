@@ -331,7 +331,23 @@ export interface ProposalResult {
  */
 export async function proposeWithdrawal(
   client: PoolClient,
-  input: { customer: string; amount: string; reason?: string; agentId: string },
+  input: {
+    customer: string;
+    amount: string;
+    reason?: string;
+    agentId: string;
+    /**
+     * The human who caused the agent to raise this, when there was one — the
+     * ops user who typed an amount and pressed the button.
+     *
+     * Recorded because otherwise "ask the agent to raise it" is a way to
+     * launder your own request past maker-checker: the agent's name goes on
+     * the row, the constraint sees two different identities, and the person
+     * who actually wanted the money approves it themselves. They are barred
+     * from deciding and executing it, by CHECK constraint.
+     */
+    triggeredBy?: string;
+  },
 ): Promise<ProposalResult> {
   if (!input.agentId.startsWith(AGENT_IDENTITY_PREFIX)) {
     throw new Error(
@@ -366,6 +382,7 @@ export async function proposeWithdrawal(
         reason: input.reason ?? null,
         withdrawableAtProposalTime: formatCents(cash.withdrawable),
         exceedsWithdrawable,
+        triggeredBy: input.triggeredBy ?? null,
       }),
       amountCents.toString(),
       customer.id,

@@ -109,12 +109,19 @@ export default function ApprovalsClient({
   return (
     <>
       <div className="card" style={{ marginBottom: 14 }}>
-        <strong style={{ fontSize: 13 }}>Raise a request — you are the maker</strong>
+        <strong style={{ fontSize: 13 }}>Ask the agent to raise a request</strong>
         <p className="dim" style={{ fontSize: 12.5, margin: '6px 0 10px' }}>
-          Only money-out <strong>above {threshold}</strong> comes through this
-          queue. Anything at or under it is refused here rather than quietly
-          taking a different path. Whatever you raise, you will not be able to
-          approve or execute — that is the point.
+          Enter an amount and the <span className="mono">agent:ops-console</span>{' '}
+          agent raises it. The agent is the maker; it proposes and can do nothing
+          else. Only money-out <strong>above {threshold}</strong> comes through
+          this queue — anything at or under it is refused here rather than
+          quietly taking a different path.
+        </p>
+        <p className="dim" style={{ fontSize: 12.5, margin: '0 0 10px' }}>
+          You will not be able to approve or execute what you ask for. Having an
+          agent put its name on the row does not make you a second pair of eyes,
+          so the console records that you triggered it and the database refuses
+          your decision.
         </p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <label>
@@ -140,7 +147,7 @@ export default function ApprovalsClient({
             disabled={busy !== null}
             onClick={() => raise()}
           >
-            {busy === 'raise' ? 'Raising…' : 'Raise the request'}
+            {busy === 'raise' ? 'Raising…' : 'Have the agent raise it'}
           </button>
         </div>
       </div>
@@ -154,8 +161,11 @@ export default function ApprovalsClient({
       )}
 
       {actionable.map((r) => {
-        // One rule: whoever raised it neither approves nor executes it.
-        const isMine = r.requested_by === me;
+        // One rule: whoever raised it — or asked an agent to — neither approves
+        // nor executes it.
+        const triggered =
+          typeof r.payload?.triggeredBy === 'string' ? r.payload.triggeredBy : null;
+        const isMine = r.requested_by === me || triggered === me;
         const pending = r.status === 'pending';
         const approved = r.status === 'approved';
         return (
@@ -222,11 +232,14 @@ export default function ApprovalsClient({
             {isMine && (pending || approved) && (
               <div className="callout callout-warn">
                 <p style={{ margin: 0, fontSize: 12.5 }}>
-                  <strong>You raised this request, so it is not yours to decide.</strong>{' '}
+                  <strong>
+                    {triggered === me
+                      ? 'You asked the agent to raise this, so it is not yours to decide.'
+                      : 'You raised this request, so it is not yours to decide.'}
+                  </strong>{' '}
                   The checker both approves and executes it. Sign in as the other ops
-                  user. The database refuses self-approval AND self-execution as CHECK
-                  constraints — the buttons below are hidden as a courtesy, not as the
-                  control.
+                  user. The database refuses it as a CHECK constraint — the buttons
+                  below are hidden as a courtesy, not as the control.
                 </p>
               </div>
             )}

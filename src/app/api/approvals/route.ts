@@ -10,12 +10,14 @@
 import { NextResponse } from 'next/server';
 import { transaction } from '@/lib/db';
 import { requireOps } from '@/lib/session';
-import {
-  ApprovalError,
-  decideApproval,
-  executeApproval,
-  raiseWithdrawal,
-} from '@/lib/approvals';
+import { ApprovalError, decideApproval, executeApproval } from '@/lib/approvals';
+import { proposeWithdrawal } from '@/lib/agent/tools';
+
+/**
+ * The identity the ops console's agent proposes under. It must begin "agent:"
+ * so the queue can tell a proposal from a human request.
+ */
+const OPS_CONSOLE_AGENT = 'agent:ops-console';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -43,19 +45,24 @@ export async function POST(request: Request) {
       }
       try {
         const raised = await transaction((client) =>
-          raiseWithdrawal(client, {
+          proposeWithdrawal(client, {
             customer: body.customer!,
             amount: body.amount!,
-            reason: body.note,
-            requestedBy: session.email,
+            reason: body.note ?? 'raised from the ops console',
+            agentId: OPS_CONSOLE_AGENT,
+            triggeredBy: session.email,
           }),
         );
         return NextResponse.json({
           ok: true,
           ...raised,
+          raisedBy: OPS_CONSOLE_AGENT,
+          triggeredBy: session.email,
           note:
-            'Raised, and pending. You cannot approve or execute it — you are the ' +
-            'maker. Sign in as the other ops user to decide it.',
+            'The AGENT raised this; it is pending a human. You cannot approve or ' +
+            'execute it — you asked for it, and having an agent put its name on ' +
+            'the row does not make you a second pair of eyes. Sign in as the ' +
+            'other ops user to decide it.',
         });
       } catch (error) {
         return NextResponse.json(

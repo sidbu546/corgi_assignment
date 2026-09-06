@@ -304,6 +304,40 @@ export async function runInvariants(connectionString?: string): Promise<Invarian
       },
     );
 
+    // Asking an agent to raise it does not make it somebody else's request.
+    // Without this, the ops console's "have the agent raise it" button would be
+    // a way to launder your own request past maker-checker: the agent's name on
+    // the row satisfies the distinct-identity constraint while the person who
+    // wanted the money approves it themselves.
+    await expectRejection(
+      G4,
+      'whoever triggered an agent cannot then approve it',
+      /approvals_trigger_cannot_decide/i,
+      async () => {
+        await client.query(
+          `INSERT INTO approvals (action_type, payload, amount_cents, requested_by,
+                                  requested_by_kind, decided_by, status)
+           VALUES ('withdrawal', '{"triggeredBy":"maker@example.test"}'::jsonb,
+                   150000, 'agent:ops-console', 'agent', 'maker@example.test',
+                   'approved')`,
+        );
+      },
+    );
+
+    await expectAccepted(
+      G4,
+      'an agent proposal with no human behind it may be decided by anyone',
+      'triggeredBy is null, so the MCP and script paths are unaffected',
+      async () => {
+        await client.query(
+          `INSERT INTO approvals (action_type, payload, amount_cents, requested_by,
+                                  requested_by_kind, decided_by, status)
+           VALUES ('withdrawal', '{}'::jsonb, 150000, 'agent:demo', 'agent',
+                   'anyone@example.test', 'approved')`,
+        );
+      },
+    );
+
     // ---- group 5: trial balance ------------------------------------------
     const G5 = 'Trial balance';
 

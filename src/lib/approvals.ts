@@ -52,81 +52,6 @@ export function assertAboveThreshold(amountCents: Cents): void {
   }
 }
 
-/**
- * A human maker raises a withdrawal request. Pending, and not theirs to decide.
- *
- * `requestedBy` comes from the caller's SESSION, never from a request body —
- * a body-supplied requester would let one person play both roles and satisfy
- * the "different identity" rule trivially.
- */
-export async function raiseWithdrawal(
-  client: PoolClient,
-  input: {
-    customer: string;
-    amount: string;
-    reason?: string;
-    requestedBy: string;
-  },
-): Promise<{
-  approvalId: string;
-  amount: string;
-  customer: string;
-  requestedBy: string;
-  status: string;
-  withdrawableAtRequestTime: string;
-  exceedsWithdrawable: boolean;
-}> {
-  if (input.requestedBy.startsWith(AGENT_PREFIX)) {
-    throw new Error('use propose_withdrawal for an agent-raised request');
-  }
-
-  const amountCents = dollarsToCents(input.amount);
-  assertAboveThreshold(amountCents);
-
-  const { rows: customers } = await client.query<{ id: string; legal_name: string }>(
-    `SELECT id, legal_name FROM customers
-      WHERE email = $1 OR legal_name = $1 OR id::text = $1
-      LIMIT 1`,
-    [input.customer],
-  );
-  if (!customers[0]) throw new Error(`no customer matching "${input.customer}"`);
-
-  // Carry the balance as it stood when raised, so the checker sees the context
-  // without going to look it up. Execution re-checks it anyway.
-  const cash = await cashPosition(customers[0].id);
-  const exceedsWithdrawable = amountCents > cash.withdrawable;
-
-  const { rows } = await client.query<{ id: string }>(
-    `INSERT INTO approvals
-       (action_type, payload, amount_cents, customer_id, requested_by,
-        requested_by_kind, status)
-     VALUES ('withdrawal', $1::jsonb, $2, $3::uuid, $4, 'human', 'pending')
-     RETURNING id`,
-    [
-      JSON.stringify({
-        customer: customers[0].legal_name,
-        amountCents: amountCents.toString(),
-        reason: input.reason ?? 'raised by ops',
-        withdrawableAtRequestTime: formatCents(cash.withdrawable),
-        exceedsWithdrawable,
-      }),
-      amountCents.toString(),
-      customers[0].id,
-      input.requestedBy,
-    ],
-  );
-
-  return {
-    approvalId: rows[0].id,
-    amount: formatCents(amountCents),
-    customer: customers[0].legal_name,
-    requestedBy: input.requestedBy,
-    status: 'pending',
-    withdrawableAtRequestTime: formatCents(cash.withdrawable),
-    exceedsWithdrawable,
-  };
-}
-
 export class ApprovalError extends Error {
   constructor(
     readonly code:
@@ -167,6 +92,18 @@ async function load(client: PoolClient, id: string): Promise<ApprovalRow> {
   );
   if (!rows[0]) throw new ApprovalError('not_found', `no approval ${id}`);
   return rows[0];
+}
+
+/**
+ * The human who caused an agent to raise this, if any.
+ *
+ * Treated exactly like the requester for the purpose of deciding: asking an
+ * agent to raise it does not make it somebody else's request. Mirrored by the
+ * approvals_trigger_cannot_decide / _execute CHECK constraints.
+ */
+export function triggeredBy(approval: { payload: Record<string, unknown> }): string | null {
+  const value = approval.payload?.triggeredBy;
+  return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
 /**
@@ -214,6 +151,15 @@ export async function decideApproval(
       'self_approval',
       `${input.decidedBy} raised this request and cannot also approve it — ` +
         `money-out needs a second pair of eyes`,
+    );
+  }
+
+  if (input.decidedBy === triggeredBy(approval)) {
+    throw new ApprovalError(
+      'self_approval',
+      `${input.decidedBy} asked the agent to raise this request and cannot also ` +
+        `approve it. Having an agent put your name on the other side does not ` +
+        `make it a second pair of eyes.`,
     );
   }
 
@@ -282,6 +228,13 @@ export async function executeApproval(
       'self_approval',
       `${input.executedBy} raised this request and cannot also execute it — ` +
         `the checker approves and pays`,
+    );
+  }
+  if (input.executedBy === triggeredBy(approval)) {
+    throw new ApprovalError(
+      'self_approval',
+      `${input.executedBy} asked the agent to raise this request and cannot also ` +
+        `execute it`,
     );
   }
   if (!approval.customer_id || approval.amount_cents === null) {
