@@ -68,6 +68,7 @@ commit.
 | Bank linking & funding | Plaid sandbox | 🟢 **LIVE** | Real Link flow, real auth + identity. The account owner is checked against the identity on file before funding. |
 | Market data | Built in-house | 🟡 **SIMULATED** | Broker sandbox keys are **not entitled** to Alpaca's market data API (401 on every auth form). The brief permits this slot to be simulated. Owning it is also what makes a **corrected close on demand** possible. |
 | Custodian file | Built in-house | 🟡 **SIMULATED** | Ships the morning positions/cash/transactions file and deliberately generates the late dividend and a tampered position. |
+| **ACH settlement notification** | Built in-house | 🟡 **SIMULATED** | The deposit is **live** — Plaid-verified ACH relationship, real Alpaca transfer, real transfer id, held at `SENT_TO_CLEARING`. Simulated is **only Alpaca telling us it completed**, which its sandbox does on trading days only. Entries say so *in the ledger*: kind `deposit.settled.simulated`, source `simulator:rail`. |
 | ACH returns | Built in-house | 🟡 **SIMULATED** | Plaid originates the deposit but will not bounce it days later with an R01. The simulator produces the return. |
 
 **On the omnibus venue, stated plainly:** the paper account is one account

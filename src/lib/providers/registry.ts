@@ -115,6 +115,22 @@ export const PROVIDER_SLOTS: ProviderSlot[] = [
     requiredEnv: ['CUSTODIAN_SIM_SECRET'],
   },
   {
+    id: 'ach_settlement_notice',
+    slot: 'ACH settlement notification',
+    provider: 'Built in-house — SIMULATED',
+    mode: 'simulated',
+    note:
+      'The deposit itself is LIVE: a Plaid-verified ACH relationship, a real ' +
+      'Alpaca transfer and a real transfer id, held by Alpaca at ' +
+      'SENT_TO_CLEARING. Simulated here is ONLY Alpaca telling us it COMPLETED ' +
+      '— a notification the sandbox sends on its own, but only on a trading ' +
+      'day, so at a weekend the whole downstream path is unreachable. ' +
+      'Entries created this way say so in the ledger: kind is ' +
+      'deposit.settled.simulated, source is simulator:rail, and the narrative ' +
+      'states it. The ledger never claims Alpaca reported something it did not.',
+    requiredEnv: [],
+  },
+  {
     id: 'ach_returns',
     slot: 'ACH returns',
     provider: 'Built in-house — SIMULATED',

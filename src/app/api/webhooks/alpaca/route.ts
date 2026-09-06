@@ -260,6 +260,16 @@ interface AlpacaTransferEvent {
   status_to?: string;
   at?: string;
   event_ulid?: string;
+  /**
+   * True when the event came from our own rail simulator rather than Alpaca.
+   *
+   * It is carried into the journal entry's kind, source and narrative, so the
+   * LEDGER records the provenance rather than only the UI. That distinction
+   * matters: a screen can be screenshotted out of context, but a journal entry
+   * is the record of what happened and must never imply a third party told us
+   * something they did not.
+   */
+  _simulated?: boolean;
 }
 
 /** Alpaca transfer statuses that mean the money is really ours. */
@@ -312,16 +322,25 @@ async function handleTransferEvent(
     );
   }
 
+  const simulated = event._simulated === true;
+  const source = simulated ? 'simulator:rail' : 'alpaca.events';
+  const author = simulated ? 'simulator:rail' : 'bridge:alpaca';
+  const provenance = simulated
+    ? ' [SIMULATED NOTIFICATION — the transfer and its Alpaca id are real and ' +
+      'held at SENT_TO_CLEARING; Alpaca has not reported completion. Its ' +
+      'sandbox settles ACH on trading days only.]'
+    : '';
+
   if (SETTLED_STATUSES.has(status)) {
     const entry = await postEntry(client, {
-      kind: 'deposit.settled',
+      kind: simulated ? 'deposit.settled.simulated' : 'deposit.settled',
       effectiveAt: new Date(event.at ?? Date.now()),
-      source: 'alpaca.events',
+      source,
       sourceRef: event.transfer_id,
-      createdBy: 'bridge:alpaca',
+      createdBy: author,
       narrative:
         `ACH deposit of ${formatCents(transfer.amount_cents)} became good funds ` +
-        `(${event.status_from ?? '?'} -> ${status})`,
+        `(${event.status_from ?? '?'} -> ${status})` + provenance,
       lines: [
         usd('assets:cash:pending_deposit', -transfer.amount_cents, {
           customerId: transfer.customer_id,
@@ -358,14 +377,14 @@ async function handleTransferEvent(
     // pending deposits in their own account — the bounce has an obvious,
     // exactly-sized thing to reverse, and no position or trade is disturbed.
     const entry = await postEntry(client, {
-      kind: 'deposit.returned',
+      kind: simulated ? 'deposit.returned.simulated' : 'deposit.returned',
       effectiveAt: new Date(event.at ?? Date.now()),
-      source: 'alpaca.events',
+      source,
       sourceRef: event.transfer_id,
-      createdBy: 'bridge:alpaca',
+      createdBy: author,
       narrative:
         `ACH deposit of ${formatCents(transfer.amount_cents)} was ${status.toLowerCase()} ` +
-        `by the rail and never became good funds`,
+        `by the rail and never became good funds` + provenance,
       lines: [
         usd('assets:cash:pending_deposit', -transfer.amount_cents, {
           customerId: transfer.customer_id,
