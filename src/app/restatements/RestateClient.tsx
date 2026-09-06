@@ -28,12 +28,16 @@ interface SplitResponse {
 
 export default function RestateClient({
   defaults,
+  splittable,
 }: {
   defaults: { symbol: string; date: string; periodStart: string; pct: number };
+  /** Held symbols not yet split today. Empty means the control is spent. */
+  splittable: string[];
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [log, setLog] = useState<Array<{ ok: boolean; title: string; body: string }>>([]);
   const [split, setSplit] = useState<SplitResponse | null>(null);
+  const [splitSymbol, setSplitSymbol] = useState(splittable[0] ?? '');
 
   /**
    * `reload` refreshes the tables below after a scenario that changes them.
@@ -146,15 +150,46 @@ export default function RestateClient({
           model is wrong</strong> — and the comparison below is measured either
           side of the same transaction rather than asserted.
         </p>
-        <button
-          className="btn"
-          disabled={busy !== null}
-          onClick={() =>
-            post({ symbol: defaults.symbol }, 'Split', '/api/ops/split', false)
-          }
-        >
-          {busy === 'Split' ? 'Splitting…' : `Run a 2-for-1 split in ${defaults.symbol}`}
-        </button>
+        {splittable.length === 0 ? (
+          <p className="dim" style={{ fontSize: 12.5, margin: 0 }}>
+            Every held symbol has already been split with today&rsquo;s ex-date. A
+            company does not split twice in a day, so the control refuses rather
+            than halving a price a second time.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <label>
+              <div className="stat-label" style={{ marginBottom: 4 }}>Symbol</div>
+              <select
+                value={splitSymbol}
+                onChange={(e) => setSplitSymbol(e.target.value)}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  border: '1px solid var(--border-strong)',
+                  background: 'var(--bg)',
+                  color: 'var(--text)',
+                  fontFamily: 'var(--mono)',
+                  fontSize: 13,
+                  minWidth: 120,
+                }}
+              >
+                {splittable.map((sym) => (
+                  <option key={sym} value={sym}>
+                    {sym}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="btn"
+              disabled={busy !== null}
+              onClick={() => post({ symbol: splitSymbol }, 'Split', '/api/ops/split', false)}
+            >
+              {busy === 'Split' ? 'Splitting…' : `Run a 2-for-1 split in ${splitSymbol}`}
+            </button>
+          </div>
+        )}
         <p className="dim" style={{ fontSize: 12, margin: '10px 0 0' }}>
           The return is compared at <strong>twelve decimal places</strong>, not the
           two the screen shows. Two different returns can print identically at 2dp,

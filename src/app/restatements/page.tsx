@@ -128,7 +128,26 @@ export default async function RestatementsPage() {
         LIMIT 10`,
     );
 
-    return { returns, prices, runs, splits };
+    // Symbols someone actually holds that have NOT been split today. The split
+    // button used to be hardcoded to one symbol, so the moment that symbol had
+    // been split the control could only ever fail — a demo button that is
+    // guaranteed to refuse is worse than no button.
+    const { rows: splittable } = await client.query<{ symbol: string; holders: number }>(
+      `SELECT l.commodity AS symbol,
+              count(DISTINCT l.customer_id)::int AS holders
+         FROM journal_lines l
+        WHERE l.account_code = 'assets:positions'
+          AND NOT EXISTS (
+                SELECT 1 FROM corporate_actions ca
+                 WHERE ca.kind = 'split' AND ca.symbol = l.commodity
+                   AND ca.ex_date = current_date
+              )
+        GROUP BY l.commodity
+       HAVING sum(l.units) > 0
+        ORDER BY 1`,
+    );
+
+    return { returns, prices, runs, splits, splittable };
   });
 
   // Pair each restatement with the row it superseded.
@@ -205,7 +224,10 @@ export default async function RestatementsPage() {
       </div>
 
       <h2>Run the scenario</h2>
-      <RestateClient defaults={DEFAULTS} />
+      <RestateClient
+        defaults={DEFAULTS}
+        splittable={data.splittable.map((s) => s.symbol)}
+      />
 
       <div className="callout callout-warn">
         <p style={{ margin: 0, fontSize: 12.5 }}>
