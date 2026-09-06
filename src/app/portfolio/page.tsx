@@ -5,6 +5,7 @@ import { inceptionToDate } from '@/lib/performance';
 import { formatCents, formatUnits } from '@/lib/money';
 import { formatPercent } from '@/lib/returns';
 import { marketDateOf } from '@/lib/calendar';
+import Decimal from 'decimal.js';
 import KycClient from './KycClient';
 
 export const runtime = 'nodejs';
@@ -187,6 +188,115 @@ export default async function PortfolioPage({
           )}
         </p>
       </div>
+
+      {/* ---------------- how the return was built ---------------- */}
+      {data.perf && data.perf.subPeriods.length > 0 && (
+        <>
+          <h2>How that return was built</h2>
+          <p className="lede" style={{ fontSize: 13 }}>
+            One row per day. The headline figure is not stored anywhere — it is
+            these rows chained together, so it can be checked by hand rather
+            than trusted.
+          </p>
+
+          <div className="callout">
+            <p style={{ margin: 0, fontSize: 12.5 }}>
+              Each day&rsquo;s return is{' '}
+              <span className="mono">r = (end − begin − flow) ÷ (begin + flow)</span>,
+              and the period chains geometrically:{' '}
+              <span className="mono">TWR = ∏(1 + r) − 1</span>. The flow sits in the
+              denominator as well as the numerator, which is exactly why a deposit
+              contributes zero and cannot flatter the number.
+              <br />
+              <br />
+              A day is marked <strong>skipped</strong> when begin + flow is zero —
+              nothing was invested, so there is no return to measure. Dividing
+              anyway would produce an infinity that then poisons every later day,
+              so those days are shown rather than quietly dropped.
+            </p>
+          </div>
+
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th className="num">Begin value</th>
+                  <th className="num">External flow</th>
+                  <th className="num">End value</th>
+                  <th className="num">Day&rsquo;s return</th>
+                  <th className="num">Cumulative</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const all = data.perf!.subPeriods;
+                  const shown = all.slice(-25);
+                  // Cumulative must chain from the FIRST day, not from the first
+                  // row displayed, or the last figure would not agree with the
+                  // headline.
+                  let chain = new Decimal(1);
+                  const upTo = all.length - shown.length;
+                  for (let i = 0; i < upTo; i++) {
+                    chain = chain.times(all[i].returnFraction.plus(1));
+                  }
+                  return shown.map((sp) => {
+                    chain = chain.times(sp.returnFraction.plus(1));
+                    const moved = sp.externalFlowCents !== 0n;
+                    return (
+                      <tr key={sp.date}>
+                        <td className="mono" style={{ fontSize: 12 }}>
+                          {sp.date}
+                        </td>
+                        <td className="num">{formatCents(sp.beginValueCents)}</td>
+                        <td
+                          className="num"
+                          style={{ color: moved ? 'var(--info)' : 'var(--text-3)' }}
+                        >
+                          {moved ? formatCents(sp.externalFlowCents) : '—'}
+                        </td>
+                        <td className="num">{formatCents(sp.endValueCents)}</td>
+                        <td
+                          className="num"
+                          style={{
+                            color: sp.skipped
+                              ? 'var(--text-3)'
+                              : sp.returnFraction.greaterThanOrEqualTo(0)
+                                ? 'var(--accent)'
+                                : 'var(--danger)',
+                          }}
+                        >
+                          {sp.skipped
+                            ? 'skipped'
+                            : formatPercent(sp.returnFraction, 4)}
+                        </td>
+                        <td className="num mono" style={{ fontSize: 12 }}>
+                          {formatPercent(chain.minus(1))}
+                        </td>
+                      </tr>
+                    );
+                  });
+                })()}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="dim" style={{ fontSize: 12 }}>
+            Showing the last {Math.min(25, data.perf.subPeriods.length)} of{' '}
+            {data.perf.subPeriods.length} days. The cumulative column chains from
+            day one, not from the top of this table, so its final value is the
+            headline figure above.
+            {data.perf.missingValuationDays.length > 0 && (
+              <>
+                {' '}
+                {data.perf.missingValuationDays.length} day(s) had no valuation and
+                are omitted rather than carried forward — inventing a flat day
+                would be a guess wearing the clothes of data.
+              </>
+            )}
+          </p>
+        </>
+      )}
 
       {/* --------------- cash, in three buckets --------------- */}
       <h2>Cash</h2>
