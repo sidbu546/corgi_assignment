@@ -84,6 +84,17 @@ export default async function LoginPage({
         test identities, no real money and no real personal data.
       </p>
 
+      <div className="callout" style={{ marginBottom: 16 }}>
+        <p style={{ margin: 0, fontSize: 12.5 }}>
+          <strong>Walking the money path end to end?</strong>{' '}
+          <a href="/signup">Open a new account</a> instead of using these. Alpaca
+          allows one ACH transfer per account per trading day, and every
+          customer below has spent theirs — a deposit for them is refused with a
+          422 until the rail settles the last one. A new account has its own
+          allowance.
+        </p>
+      </div>
+
       <div className="grid grid-2">
         <form action={login} className="card">
           {params.error && (

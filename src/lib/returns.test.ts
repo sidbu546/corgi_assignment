@@ -10,7 +10,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import Decimal from 'decimal.js';
-import { annualise, computeTwr, formatPercent, type DailyPoint } from './returns';
+import {
+  annualise,
+  computeTwr,
+  formatPercent,
+  netFlowByDay,
+  type BoundaryLine,
+  type DailyPoint,
+} from './returns';
 
 const point = (
   date: string,
@@ -169,4 +176,197 @@ test('formatPercent signs positive returns explicitly', () => {
   assert.equal(formatPercent(new Decimal('0.0734')), '+7.34%');
   assert.equal(formatPercent(new Decimal('0')), '+0.00%');
   assert.equal(formatPercent(new Decimal('-0.005')), '-0.50%');
+});
+
+// -----------------------------------------------------------------------------
+// Which movements are flows at all
+//
+// The arithmetic above was always right. What was wrong was the input: which
+// ledger movements get called a flow in the first place. Every test below is a
+// regression test for a real defect that reached a screen.
+// -----------------------------------------------------------------------------
+
+/**
+ * One journal entry, as the flow rule sees it. Each call gets a fresh entry id,
+ * because the rule is decided per entry and lines from different entries must
+ * never be pooled.
+ */
+let entrySeq = 0;
+const entry = (
+  lines: Array<[string, bigint]>,
+  day = '2026-06-10',
+): BoundaryLine[] => {
+  const entryId = `e${++entrySeq}`;
+  return lines.map(([accountCode, amountCents]) => ({
+    day,
+    entryId,
+    accountCode,
+    amountCents,
+    // House accounts (equity:*) carry no customer, exactly as in the ledger.
+    belongsToCustomer: !accountCode.startsWith('equity:'),
+  }));
+};
+
+const flowOn = (lines: BoundaryLine[], day = '2026-06-10') =>
+  netFlowByDay(lines).get(day) ?? 0n;
+
+test('a deposit becoming good funds IS the external flow', () => {
+  // pending -> settled. This entry faces no bank account at all, which is
+  // exactly why the old rule missed it and reported settling cash as return.
+  const settling = entry([
+    ['assets:cash:pending_deposit', -2_500_000n],
+    ['assets:cash:settled', 2_500_000n],
+  ]);
+  assert.equal(flowOn(settling), 2_500_000n);
+});
+
+test('initiating a deposit is not yet a flow', () => {
+  // Money left the bank but has not entered the measured portfolio: it sits in
+  // pending, which portfolio value excludes. Counting it here would put the
+  // flow on a different day from the value it explains.
+  const initiated = entry([
+    ['assets:cash:pending_deposit', 2_500_000n],
+    ['equity:external:bank', -2_500_000n],
+  ]);
+  assert.equal(flowOn(initiated), 0n);
+});
+
+test('a deposit that bounces is never a flow, in either direction', () => {
+  const initiated = entry([
+    ['assets:cash:pending_deposit', 2_500_000n],
+    ['equity:external:bank', -2_500_000n],
+  ]);
+  const bounced = entry([
+    ['assets:cash:pending_deposit', -2_500_000n],
+    ['equity:external:bank', 2_500_000n],
+  ]);
+  assert.equal(flowOn([...initiated, ...bounced]), 0n);
+});
+
+test('a withdrawal is a negative flow', () => {
+  const withdrawal = entry([
+    ['assets:cash:settled', -30_000n],
+    ['equity:external:bank', 30_000n],
+  ]);
+  assert.equal(flowOn(withdrawal), -30_000n);
+});
+
+test('a dividend is return, not a flow', () => {
+  // Cash genuinely arrives in settled cash — but from the market, not the
+  // customer's bank. Calling this a flow would erase real performance.
+  const dividend = entry([
+    ['assets:cash:settled', 1_247n],
+    ['equity:external:market', -1_247n],
+  ]);
+  assert.equal(flowOn(dividend), 0n);
+});
+
+test('a buy is not a flow even though settled cash falls', () => {
+  // The SQL would never hand these lines over, since the entry touches no
+  // boundary account. Asserted anyway: if the selection ever widens, the rule
+  // must still refuse to call this a flow.
+  const buy = entry([
+    ['assets:cash:settled', -100_000n],
+    ['assets:positions:cost', 100_000n],
+  ]);
+  assert.equal(flowOn(buy), 0n);
+});
+
+test('correcting an entry by reversal and re-book nets to no flow', () => {
+  // The provenance correction: reverse a settlement, then re-book it. Cash
+  // effect zero, so the return must not move either.
+  const reversal = entry(
+    [
+      ['assets:cash:settled', -2_500_000n],
+      ['assets:cash:pending_deposit', 2_500_000n],
+    ],
+    '2026-09-06',
+  );
+  const rebook = entry(
+    [
+      ['assets:cash:pending_deposit', -2_500_000n],
+      ['assets:cash:settled', 2_500_000n],
+    ],
+    '2026-09-06',
+  );
+  assert.equal(flowOn([...reversal, ...rebook], '2026-09-06'), 0n);
+});
+
+test('flows land on the day they happened, not summed across the series', () => {
+  const byDay = netFlowByDay([
+    ...entry(
+      [
+        ['assets:cash:pending_deposit', -2_500_000n],
+        ['assets:cash:settled', 2_500_000n],
+      ],
+      '2026-06-10',
+    ),
+    ...entry(
+      [
+        ['assets:cash:settled', -30_000n],
+        ['equity:external:bank', 30_000n],
+      ],
+      '2026-09-06',
+    ),
+  ]);
+  assert.equal(byDay.get('2026-06-10'), 2_500_000n);
+  assert.equal(byDay.get('2026-09-06'), -30_000n);
+});
+
+test('the whole deposit lifecycle contributes exactly zero return', () => {
+  // The end-to-end statement of the bug. $25,000 is deposited on day 1 and
+  // settles on day 2 into an empty account, then nothing happens. Under the
+  // old rule day 2 showed a +2,500,000-cent gain out of nowhere.
+  const day1 = entry(
+    [
+      ['assets:cash:pending_deposit', 2_500_000n],
+      ['equity:external:bank', -2_500_000n],
+    ],
+    '2026-06-10',
+  );
+  const day2 = entry(
+    [
+      ['assets:cash:pending_deposit', -2_500_000n],
+      ['assets:cash:settled', 2_500_000n],
+    ],
+    '2026-06-11',
+  );
+  const byDay = netFlowByDay([...day1, ...day2]);
+
+  const series = computeTwr([
+    // Day 1: money in flight, portfolio value still zero.
+    point('2026-06-10', 0n, byDay.get('2026-06-10') ?? 0n, 0n),
+    // Day 2: it settles and enters the measured portfolio.
+    point('2026-06-11', 0n, byDay.get('2026-06-11') ?? 0n, 2_500_000n),
+  ]);
+
+  assert.equal(r(series.twr), '0');
+  assert.equal(series.netFlowCents, 2_500_000n);
+});
+
+test('a house line marks the boundary but never adds to the amount', () => {
+  // The withdrawal case in full: equity:external:bank has no customer_id, so it
+  // must still be visible to the rule (or the entry looks internal) while
+  // contributing nothing to the flow amount.
+  const withdrawal = entry([
+    ['assets:cash:settled', -30_000n],
+    ['equity:external:bank', 30_000n],
+  ]);
+  assert.equal(
+    withdrawal.find((l) => l.accountCode === 'equity:external:bank')!.belongsToCustomer,
+    false,
+  );
+  assert.equal(flowOn(withdrawal), -30_000n, 'not -30,000 + 30,000 = 0');
+});
+
+test("another customer's lines on a shared entry are not counted", () => {
+  // A batched entry touching two customers. Only ours counts.
+  const entryId = 'shared-1';
+  const lines: BoundaryLine[] = [
+    { day: '2026-06-10', entryId, accountCode: 'assets:cash:pending_deposit', amountCents: -100n, belongsToCustomer: true },
+    { day: '2026-06-10', entryId, accountCode: 'assets:cash:settled', amountCents: 100n, belongsToCustomer: true },
+    { day: '2026-06-10', entryId, accountCode: 'assets:cash:pending_deposit', amountCents: -900n, belongsToCustomer: false },
+    { day: '2026-06-10', entryId, accountCode: 'assets:cash:settled', amountCents: 900n, belongsToCustomer: false },
+  ];
+  assert.equal(netFlowByDay(lines).get('2026-06-10'), 100n);
 });

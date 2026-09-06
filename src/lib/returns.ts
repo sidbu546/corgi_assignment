@@ -19,17 +19,28 @@
  *
  * HOW THE FLOWS ARE IDENTIFIED — this is the part that is usually fudged.
  *
- * An external flow is a movement of cash across the boundary between the
- * customer and their BANK. It is not "any cash movement". Specifically:
+ * An external flow is a movement of value across the boundary of the portfolio
+ * WE MEASURE. It is not "any cash movement", and — the subtler half — the
+ * boundary is drawn by what the portfolio value includes, not by what faces the
+ * bank:
  *
- *   deposit / withdrawal   -> faces equity:external:bank    -> EXTERNAL FLOW
+ *   deposit SETTLING       -> in-flight becomes measured    -> EXTERNAL FLOW
+ *   withdrawal             -> measured faces the bank       -> EXTERNAL FLOW
+ *   deposit INITIATED      -> outside to outside            -> NOT YET A FLOW
+ *   deposit bouncing       -> outside to outside            -> NEVER A FLOW
  *   dividend received      -> faces equity:external:market  -> RETURN
  *   buy / sell             -> internal reshuffling          -> NEITHER
  *   fees charged           -> internal                      -> RETURN (negative)
  *
  * That distinction falls straight out of the chart of accounts rather than
  * being a list of special cases someone has to maintain, which is why the two
- * external accounts were separated in the first place.
+ * external accounts were separated in the first place, and why in-flight cash
+ * has an account of its own.
+ *
+ * Recognising a deposit as a flow when it is INITIATED is the trap. Portfolio
+ * value excludes in-flight money, so the flow would land on a day the measured
+ * value does not move — making that day read as a near-total loss and the
+ * settlement day as a spectacular gain. See `netFlowByDay`.
  *
  * THE METHOD: daily-valued true TWR.
  *
@@ -45,7 +56,6 @@
  */
 
 import Decimal from 'decimal.js';
-import { query } from './db';
 import type { Cents } from './money';
 
 /** One day of the return series. All money in integer cents. */
@@ -137,53 +147,115 @@ export function formatPercent(fraction: Decimal, dp = 2): string {
 }
 
 // -----------------------------------------------------------------------------
-// Building the series from the ledger
+// What counts as an external flow — the single definition
 // -----------------------------------------------------------------------------
 
 /**
- * Net external cash flow per day for a customer.
+ * The accounts whose value the portfolio figure actually MEASURES.
  *
- * Identified structurally: a USD line whose ENTRY also touches
- * equity:external:bank is a flow across the customer/bank boundary. Everything
- * else — dividends, trades, fees — is investment activity and belongs in the
- * return, not in the flows.
- *
- * `knownAt` is what makes as-published reproducible: run it with the timestamp
- * of the original statement and late-arriving corrections are excluded, exactly
- * as they were on the day.
+ * This list must agree with `totalValueCents` in valuation.ts, which is
+ * `settled + unsettled + positions`. Pending deposits are deliberately absent
+ * from both: the money is not ours yet and can still bounce.
  */
-export async function externalFlowsByDay(
-  customerId: string,
-  from: Date,
-  to: Date,
-  knownAt?: Date,
-): Promise<Map<string, Cents>> {
-  const rows = await query<{ day: string; flow: bigint }>(
-    // ::bigint because sum() over bigint yields numeric, which our parser
-    // leaves as a string.
-    `SELECT to_char(e.effective_at AT TIME ZONE 'America/New_York', 'YYYY-MM-DD') AS day,
-            sum(l.amount_cents)::bigint AS flow
-       FROM journal_lines l
-       JOIN journal_entries e ON e.id = l.entry_id
-      WHERE l.customer_id = $1::uuid
-        AND l.commodity = 'USD'
-        AND e.effective_at >= $2
-        AND e.effective_at <  $3
-        AND e.recorded_at  <= coalesce($4::timestamptz, 'infinity')
-        -- the entry crosses the customer/bank boundary
-        AND EXISTS (
-              SELECT 1 FROM journal_lines b
-               WHERE b.entry_id = e.id
-                 AND b.account_code = 'equity:external:bank'
-            )
-      GROUP BY 1
-      ORDER BY 1`,
-    [customerId, from, to, knownAt ?? null],
-  );
+export const MEASURED_CASH_ACCOUNTS = [
+  'assets:cash:settled',
+  'assets:cash:unsettled_proceeds',
+] as const;
+
+/**
+ * Accounts that sit OUTSIDE the measured portfolio and whose presence on an
+ * entry therefore marks that entry as crossing the boundary.
+ *
+ * `equity:external:bank` is the obvious one. `assets:cash:pending_deposit` is
+ * the one that is easy to miss and was wrong here: in-flight money is outside
+ * the measured portfolio just as surely as money still in the customer's bank,
+ * so the moment it converts to settled cash, value enters the portfolio and
+ * that conversion IS the external flow.
+ *
+ * Note what is NOT here: `equity:external:market`. A dividend is cash arriving
+ * from the market, and that is return, not a flow. Keeping the bank and the
+ * market as separate counterparties is what makes this a two-line rule instead
+ * of a list of special cases.
+ */
+export const FLOW_BOUNDARY_ACCOUNTS = [
+  'equity:external:bank',
+  'assets:cash:pending_deposit',
+] as const;
+
+/** One USD journal line, tagged with the entry it belongs to. */
+export interface BoundaryLine {
+  /** YYYY-MM-DD in market time. */
+  day: string;
+  /** The journal entry this line belongs to. The rule is decided per ENTRY. */
+  entryId: string;
+  accountCode: string;
+  amountCents: Cents;
+  /**
+   * Whether this line belongs to the customer whose return is being computed.
+   *
+   * House accounts carry no customer: an `equity:external:bank` line has a null
+   * customer_id, so a query narrowed to one customer would never see the very
+   * line that marks the entry as crossing the boundary, and every withdrawal
+   * would look internal. So ALL lines of a qualifying entry are passed in, and
+   * this flag decides which ones count toward the amount.
+   */
+  belongsToCustomer: boolean;
+}
+
+/**
+ * Net external flow per day, from the lines of boundary-crossing entries.
+ *
+ * THE RULE, in one sentence: an external flow is the change in the MEASURED
+ * accounts caused by an entry that also touches something outside them.
+ *
+ * Worked through the cases that matter:
+ *
+ *   deposit.initiated   pending +100, bank -100     measured change 0   -> no flow
+ *   deposit.settled     pending -100, settled +100  measured change +100 -> FLOW +100
+ *   deposit.returned    pending -100, bank +100     measured change 0   -> no flow
+ *   withdrawal          settled -100, bank +100     measured change -100 -> FLOW -100
+ *   buy                 settled -100, position +1u  boundary untouched  -> not a flow
+ *   dividend            settled +12, market -12     boundary untouched  -> RETURN
+ *
+ * The first three lines are the reason this function exists. Recognising the
+ * flow at INITIATION, while the value it represents is excluded from the
+ * portfolio until SETTLEMENT, puts the flow on a different day from the value
+ * it explains — which makes one day look like a total loss and the next like a
+ * spectacular gain. It is pure arithmetic, and it is silent.
+ *
+ * Pure, so the rule is pinned by tests rather than asserted in a comment.
+ *
+ * BOTH HALVES OF THE RULE LIVE HERE — deliberately. The decision is made per
+ * ENTRY: first "does this entry cross the boundary at all", then "how much did
+ * the measured accounts move". An earlier version left the first half to a
+ * WHERE clause and kept only the second here, which meant the SQL and the
+ * function each held half a rule and neither could be tested against the other.
+ * The query may still pre-filter for speed, but it can only ever hand over a
+ * SUPERSET; passing it extra entries cannot change the answer.
+ */
+export function netFlowByDay(lines: readonly BoundaryLine[]): Map<string, Cents> {
+  const measured = new Set<string>(MEASURED_CASH_ACCOUNTS);
+  const boundary = new Set<string>(FLOW_BOUNDARY_ACCOUNTS);
+
+  const byEntry = new Map<string, BoundaryLine[]>();
+  for (const line of lines) {
+    const existing = byEntry.get(line.entryId);
+    if (existing) existing.push(line);
+    else byEntry.set(line.entryId, [line]);
+  }
 
   const byDay = new Map<string, Cents>();
-  for (const row of rows) {
-    byDay.set(row.day, (byDay.get(row.day) ?? 0n) + (row.flow ?? 0n));
+  for (const entryLines of byEntry.values()) {
+    // Does this entry touch anything outside the measured portfolio? If not,
+    // it is internal — a buy, a sell, a fee — and moves no value across the
+    // boundary however much cash it shuffles.
+    if (!entryLines.some((l) => boundary.has(l.accountCode))) continue;
+
+    for (const line of entryLines) {
+      if (!line.belongsToCustomer) continue;
+      if (!measured.has(line.accountCode)) continue;
+      byDay.set(line.day, (byDay.get(line.day) ?? 0n) + line.amountCents);
+    }
   }
   return byDay;
 }

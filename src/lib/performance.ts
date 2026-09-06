@@ -5,12 +5,21 @@
  * (what money crossed the customer/bank boundary each day), and the two produce
  * a time-weighted return.
  *
- * The important line in this file is the flow query's join condition: a flow is
- * a USD movement on an entry that ALSO touches `equity:external:bank`. Not "any
- * cash movement" — a dividend is cash arriving and it is emphatically return,
- * not a flow. Getting that predicate wrong is the single most common way a
- * return figure ends up wrong, and it is why the chart of accounts separates
- * the bank counterparty from the market counterparty.
+ * Getting the flow predicate wrong is the single most common way a return
+ * figure ends up wrong, and this file got it wrong twice before it got it
+ * right, in both directions:
+ *
+ *   too narrow  requiring a settled line AND a bank line. A deposit settling
+ *               moves pending -> settled and faces no bank account at all, so
+ *               deposits vanished from the flows entirely and cash arriving in
+ *               the portfolio read as investment performance. That is the bug
+ *               that showed a demo account +153.80%.
+ *   too broad   counting the deposit when it was INITIATED. The value it
+ *               represents is excluded from the portfolio until it settles, so
+ *               the flow landed a day or more before the value it explained.
+ *
+ * The rule that survives both is in `netFlowByDay`, which is pure and tested.
+ * This file only selects the candidate lines and hands them over.
  *
  * `knownAt` threads through everything, so the same function produces the
  * as-published figure and the as-corrected one. A restatement is not a
@@ -18,7 +27,13 @@
  */
 
 import type { PoolClient } from 'pg';
-import { computeTwr, type DailyPoint, type TwrResult } from './returns';
+import {
+  computeTwr,
+  netFlowByDay,
+  FLOW_BOUNDARY_ACCOUNTS,
+  type DailyPoint,
+  type TwrResult,
+} from './returns';
 import { calendarDaysBetween, type MarketDate } from './calendar';
 import type { Cents } from './money';
 
@@ -68,32 +83,57 @@ export async function performance(
   const valueByDay = new Map<MarketDate, Cents>();
   for (const row of valuations) valueByDay.set(row.d, row.total);
 
-  // --- external flows: money across the customer/bank boundary --------------
-  const { rows: flows } = await client.query<{ d: MarketDate; flow: bigint }>(
+  // --- external flows: value across the boundary of the measured portfolio ---
+  // This query only SELECTS candidate lines — every line of every entry that
+  // touches something outside the measured portfolio. It deliberately does not
+  // decide what a flow is; `netFlowByDay` does, because that rule is worth
+  // testing and SQL is not where it can be.
+  // Note it selects EVERY USD line of a qualifying entry, not only the
+  // customer's. House accounts carry no customer_id, so narrowing this to the
+  // customer would hide the `equity:external:bank` line that marks a withdrawal
+  // as crossing the boundary. `belongsToCustomer` carries that distinction
+  // through, and the rule decides what to do with it.
+  const { rows: boundaryLines } = await client.query<{
+    d: MarketDate;
+    entry_id: string;
+    account_code: string;
+    amount_cents: bigint;
+    mine: boolean;
+  }>(
     `SELECT to_char(e.effective_at AT TIME ZONE 'America/New_York', 'YYYY-MM-DD') AS d,
-            sum(l.amount_cents)::bigint AS flow
+            l.entry_id, l.account_code, l.amount_cents,
+            (l.customer_id = $1::uuid) AS mine
        FROM journal_lines l
        JOIN journal_entries e ON e.id = l.entry_id
-      WHERE l.customer_id = $1::uuid
-        AND l.commodity = 'USD'
+      WHERE l.commodity = 'USD'
         AND e.effective_at >= $2::date
         AND e.effective_at <  ($3::date + 1)
         AND e.recorded_at  <= coalesce($4::timestamptz, 'infinity')
-        -- Only settled money counts as a flow. A deposit still in flight has
-        -- not entered the portfolio, and it is excluded from portfolio value
-        -- too, so both sides of the return stay consistent.
-        AND l.account_code = 'assets:cash:settled'
+        -- the entry concerns this customer at all
+        AND EXISTS (
+              SELECT 1 FROM journal_lines c
+               WHERE c.entry_id = e.id AND c.customer_id = $1::uuid
+            )
+        -- and it touches something outside the measured portfolio. This is a
+        -- pre-filter for speed only: netFlowByDay re-checks it, so widening or
+        -- dropping this clause cannot change the answer.
         AND EXISTS (
               SELECT 1 FROM journal_lines b
                WHERE b.entry_id = e.id
-                 AND b.account_code = 'equity:external:bank'
-            )
-      GROUP BY 1`,
-    [input.customerId, input.from, input.to, knownAt],
+                 AND b.account_code = ANY ($5::text[])
+            )`,
+    [input.customerId, input.from, input.to, knownAt, [...FLOW_BOUNDARY_ACCOUNTS]],
   );
 
-  const flowByDay = new Map<MarketDate, Cents>();
-  for (const row of flows) flowByDay.set(row.d, row.flow ?? 0n);
+  const flowByDay = netFlowByDay(
+    boundaryLines.map((row) => ({
+      day: row.d,
+      entryId: row.entry_id,
+      accountCode: row.account_code,
+      amountCents: row.amount_cents,
+      belongsToCustomer: row.mine === true,
+    })),
+  );
 
   // --- assemble the series --------------------------------------------------
   const days = calendarDaysBetween(input.from, input.to);
