@@ -2,6 +2,7 @@ import { withClient } from '@/lib/db';
 import { requireOps } from '@/lib/session';
 import { formatCents } from '@/lib/money';
 import { marketDateOf } from '@/lib/calendar';
+import RailClient, { type PendingDeposit } from './RailClient';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -73,7 +74,23 @@ export default async function OpsPage({
          FROM webhook_deliveries GROUP BY provider ORDER BY provider`,
     );
 
-    return { customers, approvals, webhookStats };
+    const { rows: pending } = await client.query<{
+      legal_name: string;
+      email: string;
+      amount_cents: bigint;
+      provider_ref: string;
+    }>(
+      `SELECT c.legal_name, c.email, t.amount_cents, t.provider_ref
+         FROM cash_transfers t
+         JOIN customers c ON c.id = t.customer_id
+        WHERE t.provider_ref IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM cash_transfer_events e
+                           WHERE e.transfer_id = t.id
+                             AND e.kind IN ('settled','returned'))
+        ORDER BY t.recorded_at DESC LIMIT 10`,
+    );
+
+    return { customers, approvals, webhookStats, pending };
   });
 
   const bookValue = data.customers.reduce((sum, c) => sum + (c.total ?? 0n), 0n);
@@ -222,6 +239,17 @@ export default async function OpsPage({
           </table>
         </div>
       )}
+
+      <RailClient
+        pending={data.pending.map(
+          (d): PendingDeposit => ({
+            customer: d.legal_name,
+            email: d.email,
+            amount: formatCents(d.amount_cents),
+            transferId: d.provider_ref,
+          }),
+        )}
+      />
 
       <h2>Inbound events</h2>
       <div className="table-wrap">
