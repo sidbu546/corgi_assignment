@@ -47,36 +47,45 @@ export default async function ReconPage() {
          FROM recon_runs ORDER BY started_at DESC LIMIT 10`,
     );
 
-    // The newest run per (as-of date, CUSTOMER).
+    // ALL breaks from the newest run PER CUSTOMER, for the newest as-of date.
     //
-    // reconcile() creates one run PER CUSTOMER, so an earlier version of this
-    // query that took the newest run per DATE showed only whichever customer
-    // happened to be reconciled last and silently hid everyone else's breaks.
-    // A breaks screen that hides breaks is worse than no breaks screen.
+    // I got this wrong twice, so it is worth being precise about the shape.
+    // reconcile() creates one recon_run per CUSTOMER. So:
+    //
+    //   DISTINCT ON (as_of_date)              -> one customer, everyone else hidden
+    //   DISTINCT ON (customer_id, as_of_date) -> one BREAK per customer, the rest hidden
+    //
+    // Both are silently lossy, which is the worst possible failure for a screen
+    // whose entire purpose is that a break must not get lost. The correct shape
+    // is: pick the latest RUN per customer, then take EVERY break belonging to
+    // those runs.
     const { rows: breaks } = await client.query<BreakRow>(
-      `SELECT b.id, c.legal_name, b.break_type, b.classification, b.symbol,
+      `WITH latest_run_per_customer AS (
+              SELECT DISTINCT ON (b.customer_id) b.customer_id, b.run_id
+                FROM recon_breaks b
+                JOIN recon_runs r ON r.id = b.run_id
+               WHERE r.as_of_date = (SELECT max(as_of_date) FROM recon_runs)
+               ORDER BY b.customer_id, r.started_at DESC
+       )
+       SELECT b.id, c.legal_name, b.break_type, b.classification, b.symbol,
               b.ours_units, b.theirs_units, b.ours_cents, b.theirs_cents,
-              b.first_seen_at, to_char(b.expected_clear_date, 'YYYY-MM-DD') AS expected_clear_date,
+              b.first_seen_at,
+              to_char(b.expected_clear_date, 'YYYY-MM-DD') AS expected_clear_date,
               b.detail, b.resolved_at,
-              to_char(r.as_of_date, 'YYYY-MM-DD') AS as_of_date, r.started_at AS run_started
+              to_char(r.as_of_date, 'YYYY-MM-DD') AS as_of_date,
+              r.started_at AS run_started
          FROM recon_breaks b
+         JOIN latest_run_per_customer l
+           ON l.run_id = b.run_id AND l.customer_id = b.customer_id
          JOIN recon_runs r ON r.id = b.run_id
          JOIN customers c ON c.id = b.customer_id
-        WHERE b.id IN (
-              SELECT DISTINCT ON (b2.customer_id, r2.as_of_date) b2.id
-                FROM recon_breaks b2
-                JOIN recon_runs r2 ON r2.id = b2.run_id
-               WHERE r2.as_of_date = (SELECT max(as_of_date) FROM recon_runs)
-               ORDER BY b2.customer_id, r2.as_of_date, r2.started_at DESC,
-                        b2.classification, b2.id
-        )
         ORDER BY
           CASE
             WHEN b.classification LIKE 'genuine.%'  THEN 0
             WHEN b.classification LIKE 'unbooked.%' THEN 1
             ELSE 2
           END,
-          b.first_seen_at ASC`,
+          c.legal_name, b.first_seen_at ASC`,
     );
 
     return { runs, breaks };

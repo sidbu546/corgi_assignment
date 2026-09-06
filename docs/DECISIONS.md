@@ -1211,3 +1211,48 @@ moved leads. And the zero-difference rows now explain themselves in place —
 "unchanged, and correctly so; this period spans the corrected date rather than
 ending on it" — because the telescoping property is genuinely interesting and
 worth showing, just not first.
+
+---
+
+## 2026-09-06T08:00Z — I got the same query wrong twice, so I extracted and tested it
+
+**The sequence, because the pattern matters more than either bug.**
+
+`reconcile()` creates one recon_run **per customer**. The /recon page has to turn
+that into "what is currently broken". I wrote it wrong twice:
+
+1. `DISTINCT ON (as_of_date)` — newest run per DATE. Showed one customer,
+   silently hid everyone else.
+2. `DISTINCT ON (customer_id, as_of_date)` — newest *break* per customer.
+   Showed one break each, silently hid the rest. Dana had a genuine position
+   break AND an unbooked dividend; the screen showed one of them.
+
+Neither errored. Neither looked wrong. Both were caught by a reviewer comparing
+the screen to the CLI output — which is exactly the comparison I had never
+automated.
+
+**The correct shape**, stated once so it is not re-derived a third time: take the
+latest **RUN** per customer for the latest as-of date, then take **every** break
+belonging to those runs.
+
+**Why this was the most dangerous bug in the project.** The whole argument for
+the breaks screen is that a break must not get lost. A screen that quietly shows
+a subset manufactures confidence: the count looks plausible, nothing errors, and
+the break you needed is simply absent. Correct logic behind a lossy query is
+indistinguishable from broken logic to anyone looking at the screen.
+
+**The fix that matters is not the SQL.** I had tested the reconciliation ENGINE
+thoroughly — a clean run finds zero breaks, a planted run finds exactly two per
+customer — and never tested that the SCREEN showed what the engine found. So the
+selection rule is now extracted into `selectVisibleBreaks()` and pinned by six
+tests covering both failure modes explicitly, including the case that caught it:
+three customers, two breaks each, all six must be visible.
+
+Verified against the deployed page by comparing it to the engine's own rows:
+engine 2 genuine / 4 unbooked, page 2 genuine / 4 unbooked, and every customer
+named on the page.
+
+**Also fixed:** two customers were both called "Robin Castellanos" — created by
+`happy-path` before it started suffixing names. Not a bug, but two identical
+names on an ops screen reads as a duplicate-record problem, which is a bad thing
+to have to explain mid-demo. Renamed to A and B.
