@@ -79,9 +79,26 @@ export async function POST(request: Request) {
           detail?: string;
         }> = [];
         if (customer.alpaca_account_id) {
-          const existing = await listAchRelationships(customer.alpaca_account_id).catch(
-            () => [] as Array<{ id: string; status: string }>,
-          );
+          // No catch-and-return-empty here. Failing to ASK the broker is not
+          // the same as the broker holding nothing, and treating them alike
+          // would report a clean unlink while leaving the orphan that makes
+          // relinking impossible. If the call fails, say so.
+          let existing: Array<{ id: string; status: string }>;
+          try {
+            existing = await listAchRelationships(customer.alpaca_account_id);
+          } catch (error) {
+            return NextResponse.json(
+              {
+                unlinked: 0,
+                error:
+                  `Could not ask the broker what it holds, so nothing was ` +
+                  `unlinked: ${error instanceof Error ? error.message : String(error)}. ` +
+                  `Deactivating our record while a relationship stays alive at ` +
+                  `Alpaca would make relinking impossible.`,
+              },
+              { status: 502 },
+            );
+          }
           for (const rel of existing) {
             if (rel.status.toUpperCase() === 'CANCELED') continue;
             try {
@@ -117,6 +134,7 @@ export async function POST(request: Request) {
           unlinked: deactivated.length,
           brokerageAccountKept: customer.alpaca_account_id ?? null,
           brokerRelationships: brokerResults,
+          brokerEnumerated: true,
           note:
             deactivated.length === 0
               ? 'There was no active bank link to remove.'
