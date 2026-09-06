@@ -291,6 +291,16 @@ export async function createAchRelationshipFromPlaid(input: {
   );
 }
 
+/** What the BROKER holds, which is not always what our records say it holds. */
+export async function listAchRelationships(
+  accountId: string,
+): Promise<Array<{ id: string; status: string }>> {
+  return request<Array<{ id: string; status: string }>>(
+    'GET',
+    `/v1/accounts/${accountId}/ach_relationships`,
+  );
+}
+
 /**
  * Delete an ACH relationship.
  *

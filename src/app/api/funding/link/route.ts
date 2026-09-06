@@ -24,6 +24,7 @@ import {
 import {
   createAchRelationshipFromPlaid,
   deleteAchRelationship,
+  listAchRelationships,
 } from '@/lib/providers/alpaca';
 import {
   assertMayTransact,
@@ -67,28 +68,34 @@ export async function POST(request: Request) {
         // makes relinking permanently impossible — our database says unlinked,
         // the broker says otherwise, and the customer gets a 409 they cannot
         // act on. That is precisely what the first version of this did.
-        const { rows: live } = await client.query<{ id: string; rel: string | null }>(
-          `SELECT id, alpaca_relationship_id AS rel FROM bank_links
-            WHERE customer_id = $1::uuid AND is_active`,
-          [customer.id],
-        );
-
-        const brokerResults: Array<{ relationshipId: string; deleted: boolean; detail?: string }> = [];
+        // Enumerate from the BROKER, not from our rows. If a previous unlink
+        // deactivated our row without deleting the relationship, the orphan is
+        // invisible to a query over bank_links — and it is exactly that orphan
+        // that makes relinking fail. Asking Alpaca what it actually holds is
+        // the only way to clear a state our own records cannot see.
+        const brokerResults: Array<{
+          relationshipId: string;
+          deleted: boolean;
+          detail?: string;
+        }> = [];
         if (customer.alpaca_account_id) {
-          for (const link of live) {
-            if (!link.rel) continue;
+          const existing = await listAchRelationships(customer.alpaca_account_id).catch(
+            () => [] as Array<{ id: string; status: string }>,
+          );
+          for (const rel of existing) {
+            if (rel.status.toUpperCase() === 'CANCELED') continue;
             try {
               await deleteAchRelationship({
                 accountId: customer.alpaca_account_id,
-                relationshipId: link.rel,
+                relationshipId: rel.id,
               });
-              brokerResults.push({ relationshipId: link.rel, deleted: true });
+              brokerResults.push({ relationshipId: rel.id, deleted: true });
             } catch (error) {
               // Report it rather than swallowing it. A relationship left alive
               // at the broker is the difference between "you can link again"
               // and a 409 the customer cannot do anything about.
               brokerResults.push({
-                relationshipId: link.rel,
+                relationshipId: rel.id,
                 deleted: false,
                 detail: error instanceof Error ? error.message.slice(0, 200) : String(error),
               });
