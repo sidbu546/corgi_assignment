@@ -76,44 +76,14 @@ async function load(client: PoolClient, id: string): Promise<ApprovalRow> {
 /**
  * Approve or reject. Records WHO decided, and refuses the two identities that
  * must never decide: the requester, and any agent.
- */
-/**
- * Does this request need a SECOND person, or may the raiser decide it?
  *
- * Mirrors the CHECK constraint added in 0008_approval_threshold.sql. The
- * database is the authority — this exists so the refusal is a legible message
- * rather than a constraint violation, and the two must agree. Invariants probe
- * the boundary from APPROVAL_THRESHOLD_CENTS to keep them agreeing.
+ * ONE RULE, NO BRANCH. 0008 briefly let a human decide their own request at or
+ * under the threshold. It was a faithful reading of the page copy and it made
+ * the queue worse — two kinds of card behaving differently for no reason a
+ * reviewer could see, and a maker who could still execute their own money-out.
+ * 0009 removed the branch: every money-out needs a different person, at any
+ * amount, human or agent.
  */
-export function needsSecondPerson(approval: {
-  requested_by_kind: string;
-  amount_cents: Cents | null;
-}): boolean {
-  // An agent may propose and never decide. No threshold may erode that, so an
-  // agent-raised request needs a second person at any amount.
-  if (approval.requested_by_kind !== 'human') return true;
-  // An unknown amount cannot be shown to be under the threshold, so it is not
-  // treated as though it were.
-  if (approval.amount_cents === null) return true;
-  return approval.amount_cents > APPROVAL_THRESHOLD_CENTS;
-}
-
-function describeWhySecondPersonNeeded(approval: {
-  requested_by_kind: string;
-  amount_cents: Cents | null;
-}): string {
-  if (approval.requested_by_kind !== 'human') {
-    return 'it was raised by an agent, and an agent proposal always needs a human decision';
-  }
-  if (approval.amount_cents === null) {
-    return 'the amount is unknown, so it cannot be shown to be under the threshold';
-  }
-  return (
-    `it is above the ${formatCents(APPROVAL_THRESHOLD_CENTS)} threshold ` +
-    `(${formatCents(approval.amount_cents)})`
-  );
-}
-
 export async function decideApproval(
   client: PoolClient,
   input: {
@@ -141,13 +111,13 @@ export async function decideApproval(
     );
   }
 
-  if (input.decidedBy === approval.requested_by && needsSecondPerson(approval)) {
+  if (input.decidedBy === approval.requested_by) {
     // The CHECK constraint would refuse this anyway; failing here gives a
     // legible message instead of a constraint violation.
     throw new ApprovalError(
       'self_approval',
-      `${input.decidedBy} raised this request and cannot also approve it: ` +
-        `${describeWhySecondPersonNeeded(approval)}`,
+      `${input.decidedBy} raised this request and cannot also approve it — ` +
+        `money-out needs a second pair of eyes`,
     );
   }
 
@@ -209,6 +179,15 @@ export async function executeApproval(
       'an agent may not execute a money-out instruction',
     );
   }
+  // Approving and executing are two acts, but both belong to the checker.
+  // Whoever asked for the money never moves it.
+  if (input.executedBy === approval.requested_by) {
+    throw new ApprovalError(
+      'self_approval',
+      `${input.executedBy} raised this request and cannot also execute it — ` +
+        `the checker approves and pays`,
+    );
+  }
   if (!approval.customer_id || approval.amount_cents === null) {
     throw new ApprovalError('not_found', 'approval is missing a customer or amount');
   }
@@ -250,9 +229,10 @@ export async function executeApproval(
   });
 
   await client.query(
-    `UPDATE approvals SET status = 'executed', executed_entry_id = $2::uuid
+    `UPDATE approvals SET status = 'executed', executed_entry_id = $2::uuid,
+            executed_by = $3
       WHERE id = $1::uuid`,
-    [approval.id, entry.id],
+    [approval.id, entry.id, input.executedBy],
   );
 
   return {
@@ -281,6 +261,7 @@ export async function listApprovals(
     decided_at: Date | null;
     decision_note: string | null;
     executed_entry_id: string | null;
+    executed_by: string | null;
     requested_at: Date;
   }>
 > {
@@ -289,7 +270,7 @@ export async function listApprovals(
             c.legal_name AS customer_name,
             a.requested_by, a.requested_by_kind, a.status::text AS status,
             a.decided_by, a.decided_at, a.decision_note, a.executed_entry_id,
-            a.requested_at
+            a.executed_by, a.requested_at
        FROM approvals a
        LEFT JOIN customers c ON c.id = a.customer_id
       -- A queue leads with the work, not with settled history. Ordering purely

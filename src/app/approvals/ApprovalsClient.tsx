@@ -15,12 +15,7 @@ export interface QueueRow {
   executed_entry_id: string | null;
   requested_at: string;
   payload: Record<string, unknown>;
-  /**
-   * Whether a DIFFERENT person must decide this one. Computed on the server by
-   * the same function the API and the CHECK constraint agree with — the client
-   * must not re-derive a money control from a formatted amount string.
-   */
-  needs_second_person: boolean;
+  executed_by: string | null;
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -73,9 +68,8 @@ export default function ApprovalsClient({
       )}
 
       {rows.map((r) => {
+        // One rule: whoever raised it neither approves nor executes it.
         const isMine = r.requested_by === me;
-        // Raising it only blocks you when a second person is actually required.
-        const blocked = isMine && r.needs_second_person;
         const pending = r.status === 'pending';
         const approved = r.status === 'approved';
         return (
@@ -139,33 +133,20 @@ export default function ApprovalsClient({
               ))}
             </dl>
 
-            {blocked && pending && (
+            {isMine && (pending || approved) && (
               <div className="callout callout-warn">
                 <p style={{ margin: 0, fontSize: 12.5 }}>
-                  <strong>You raised this request, so you cannot approve it.</strong>{' '}
-                  {r.requested_by_kind === 'agent'
-                    ? 'An agent proposal always needs a human decision, at any amount.'
-                    : 'It is above the threshold, so it needs a second pair of eyes.'}{' '}
-                  Sign in as the other ops user to decide. The database refuses
-                  self-approval as a CHECK constraint — the buttons below are hidden
-                  as a courtesy, not as the control.
-                </p>
-              </div>
-            )}
-
-            {isMine && pending && !blocked && (
-              <div className="callout">
-                <p style={{ margin: 0, fontSize: 12.5 }}>
-                  <strong>You raised this, and you may decide it.</strong> It is at
-                  or under the threshold, which is the stated policy: one pair of
-                  eyes below, two above. The database enforces exactly that — it
-                  would refuse your decision if this were a cent larger.
+                  <strong>You raised this request, so it is not yours to decide.</strong>{' '}
+                  The checker both approves and executes it. Sign in as the other ops
+                  user. The database refuses self-approval AND self-execution as CHECK
+                  constraints — the buttons below are hidden as a courtesy, not as the
+                  control.
                 </p>
               </div>
             )}
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {pending && !blocked && (
+              {pending && !isMine && (
                 <>
                   <button
                     className="btn btn-primary"
@@ -183,12 +164,17 @@ export default function ApprovalsClient({
                   </button>
                 </>
               )}
-              {pending && blocked && (
+              {pending && isMine && (
                 <button className="btn" disabled title="You raised this request">
                   Approve (blocked — you raised it)
                 </button>
               )}
-              {approved && (
+              {approved && isMine && (
+                <button className="btn" disabled title="You raised this request">
+                  Execute (blocked — you raised it)
+                </button>
+              )}
+              {approved && !isMine && (
                 <button
                   className="btn btn-primary"
                   disabled={busy !== null}

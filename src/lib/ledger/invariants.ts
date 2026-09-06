@@ -14,8 +14,6 @@
 
 import '../pg-types';
 import { Client } from 'pg';
-import { APPROVAL_THRESHOLD_CENTS } from '../approvals';
-import { formatCents } from '../money';
 
 export interface InvariantCheck {
   group: string;
@@ -274,67 +272,34 @@ export async function runInvariants(connectionString?: string): Promise<Invarian
          VALUES ('withdrawal', '{}'::jsonb, 'maker@example.test', 'human', 'checker@example.test', 'approved')`);
     });
 
-    // The threshold, probed at its exact boundary FROM THE TYPESCRIPT CONSTANT.
-    // A CHECK constraint cannot read application config, so this is what keeps
-    // 0008_approval_threshold.sql and APPROVAL_THRESHOLD_CENTS from drifting: if
-    // the constant moves and the migration does not, one of these two fails.
-    const atThreshold = APPROVAL_THRESHOLD_CENTS;
-    const overThreshold = APPROVAL_THRESHOLD_CENTS + 1n;
+    // Self-EXECUTION is a separate constraint from self-approval. Approving and
+    // executing are two acts and both belong to the checker; without this the
+    // maker could not approve their own withdrawal but could still press
+    // "execute" on it once somebody else had approved.
+    await expectRejection(
+      G4,
+      'the initiator cannot execute their own request either',
+      /approvals_no_self_execution/i,
+      async () => {
+        await client.query(
+          `INSERT INTO approvals (action_type, payload, amount_cents, requested_by,
+                                  requested_by_kind, decided_by, executed_by, status)
+           VALUES ('withdrawal', '{}'::jsonb, 150000, 'maker@example.test', 'human',
+                   'checker@example.test', 'maker@example.test', 'executed')`,
+        );
+      },
+    );
 
     await expectAccepted(
       G4,
-      `at or under ${formatCents(atThreshold)}, one human may decide their own request`,
-      'the stated threshold is the enforced threshold',
+      'the checker may both approve and execute',
+      'one different person does both halves; the maker does neither',
       async () => {
         await client.query(
           `INSERT INTO approvals (action_type, payload, amount_cents, requested_by,
-                                  requested_by_kind, decided_by, status)
-           VALUES ('withdrawal', '{}'::jsonb, $1, 'solo@example.test', 'human',
-                   'solo@example.test', 'approved')`,
-          [atThreshold.toString()],
-        );
-      },
-    );
-
-    await expectRejection(
-      G4,
-      `one cent over the threshold, the same human is refused`,
-      /approvals_no_self_approval/i,
-      async () => {
-        await client.query(
-          `INSERT INTO approvals (action_type, payload, amount_cents, requested_by,
-                                  requested_by_kind, decided_by, status)
-           VALUES ('withdrawal', '{}'::jsonb, $1, 'solo@example.test', 'human',
-                   'solo@example.test', 'approved')`,
-          [overThreshold.toString()],
-        );
-      },
-    );
-
-    await expectRejection(
-      G4,
-      'an agent cannot self-approve even for one cent',
-      /approvals_no_self_approval/i,
-      async () => {
-        await client.query(
-          `INSERT INTO approvals (action_type, payload, amount_cents, requested_by,
-                                  requested_by_kind, decided_by, status)
-           VALUES ('withdrawal', '{}'::jsonb, 1, 'agent:probe', 'agent',
-                   'agent:probe', 'approved')`,
-        );
-      },
-    );
-
-    await expectRejection(
-      G4,
-      'an unknown amount is never treated as under the threshold',
-      /approvals_no_self_approval/i,
-      async () => {
-        await client.query(
-          `INSERT INTO approvals (action_type, payload, amount_cents, requested_by,
-                                  requested_by_kind, decided_by, status)
-           VALUES ('withdrawal', '{}'::jsonb, NULL, 'solo@example.test', 'human',
-                   'solo@example.test', 'approved')`,
+                                  requested_by_kind, decided_by, executed_by, status)
+           VALUES ('withdrawal', '{}'::jsonb, 150000, 'maker@example.test', 'human',
+                   'checker@example.test', 'checker@example.test', 'executed')`,
         );
       },
     );

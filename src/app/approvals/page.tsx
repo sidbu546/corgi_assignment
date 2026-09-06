@@ -1,10 +1,6 @@
 import { withClient } from '@/lib/db';
 import { requireOps } from '@/lib/session';
-import {
-  listApprovals,
-  needsSecondPerson,
-  APPROVAL_THRESHOLD_CENTS,
-} from '@/lib/approvals';
+import { listApprovals, APPROVAL_THRESHOLD_CENTS } from '@/lib/approvals';
 import { NEVER_FOR_AGENTS } from '@/lib/agent/tools';
 import { formatCents } from '@/lib/money';
 import ApprovalsClient, { type QueueRow } from './ApprovalsClient';
@@ -30,12 +26,7 @@ export default async function ApprovalsPage() {
     executed_entry_id: r.executed_entry_id,
     requested_at: new Date(r.requested_at).toISOString(),
     payload: (r.payload ?? {}) as Record<string, unknown>,
-    // Computed with the SAME function the route and the CHECK constraint agree
-    // with, rather than re-deciding it in the client from a formatted "$250.00"
-    // string. The screen previously blocked on "you raised it" alone, which was
-    // the rule before the threshold existed — so an identical $250 request could
-    // appear self-approved on one card and un-approvable on the next.
-    needs_second_person: needsSecondPerson(r),
+    executed_by: r.executed_by ?? null,
   }));
 
   const pending = queue.filter((q) => q.status === 'pending').length;
@@ -49,14 +40,15 @@ export default async function ApprovalsPage() {
       <h1>Approvals</h1>
       <p className="lede">
         Money-out above{' '}
-        <span className="mono">{formatCents(APPROVAL_THRESHOLD_CENTS)}</span> needs a
-        second pair of eyes, and that threshold is a CHECK constraint rather than a
-        sentence on this page — the database refuses it, so it holds from{' '}
-        <span className="mono">psql</span> too. At or under it, one human may decide
-        their own request. Above it, or raised by an agent at{' '}
-        <em>any</em> amount, a different person must decide. And an agent can never
-        approve anything at all — it may propose, and that is the entire extent of
-        its authority.
+        <span className="mono">{formatCents(APPROVAL_THRESHOLD_CENTS)}</span> requires
+        approval, and this build routes <em>every</em> money-out through this queue,
+        so the control covers all of it. One rule, no exceptions: the{' '}
+        <strong>maker</strong> raises the request — human or agent, any amount — and
+        a <strong>different</strong> person, the <strong>checker</strong>, both
+        approves it and executes it. The initiator can never approve or execute their
+        own request, and an agent can never approve or execute anything at all. Both
+        are CHECK constraints, so they hold from <span className="mono">psql</span>{' '}
+        too.
       </p>
 
       <div className="grid grid-3" style={{ marginBottom: 16 }}>
