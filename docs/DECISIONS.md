@@ -1290,3 +1290,52 @@ the README.
 asks Alpaca, Plaid and Persona directly what they hold, without reading our
 database at all. Between the two, the claim "money moved" can be checked from
 either end.
+
+---
+
+## 2026-09-06T10:00Z — You cannot see money move if nothing ever settles
+
+**The criticism, and it was right:** the deployed site showed *records*, not
+*movement*. Every screen was a report of state. Nothing let you watch a number
+change.
+
+**The actual cause was not a UI problem.** Alpaca's sandbox settles ACH on
+trading days, so every deposit sat at `SENT_TO_CLEARING` indefinitely. Money
+entered `assets:cash:pending_deposit` and stopped. Settled cash never rose,
+nothing became investable, and the entire downstream path was unreachable — so
+there was nothing to watch even in principle.
+
+**`/api/ops/simulate-rail`** produces the settlement notification the rail will
+send on its own. Stated exactly, because the distinction is the whole point:
+
+- **REAL** — the ACH relationship, the transfer, its Alpaca id, and the fact
+  that Alpaca is holding it at SENT_TO_CLEARING right now
+- **SIMULATED** — Alpaca telling us it COMPLETED
+
+It is not a shortcut around the ledger. The event is signed with the bridge
+secret and POSTed to our own webhook endpoint, so it passes signature
+verification, the idempotency check and the same handler a genuine Alpaca event
+uses. Replay it and it dedupes. There is no privileged write path, and the
+endpoint refuses to invent a transfer that does not exist at Alpaca.
+
+**`npm run demo`** then walks the path printing balances BEFORE and AFTER each
+step, so the movement is on screen rather than inferred:
+
+```
+pending $25,000.00 -> $0.00      -$25,000.00
+settled  $5,424.00 -> $30,424.00 +$25,000.00
+...withdrawal...
+settled $30,424.00 -> $30,124.00    -$300.00
+```
+
+**Two bugs found while building it, both the same failure of discipline.**
+
+`simulate-rail` originally advanced whichever deposit was newest across the
+whole book, so it settled Marcus's money while the demo narrated Dana — whose
+balances had not moved. Now scoped to a named customer.
+
+And the demo *asserted* the expected movement rather than reading it. It printed
+"pending fell, settled rose" on a step where nothing had changed. Narration that
+does not read the numbers is worse than no narration: it is confident and wrong.
+It now computes the delta and describes what actually happened, including
+"nothing moved for this customer" when that is the truth.
