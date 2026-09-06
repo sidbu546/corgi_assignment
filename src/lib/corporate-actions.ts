@@ -85,6 +85,45 @@ export async function applySplit(
   }
   const ratio = new Decimal(numerator).div(denominator);
 
+  // --- 0. one split per symbol per ex-date --------------------------------
+  //
+  // A company does not split twice in a day, and without this a second press
+  // halves the price again and doubles the units again. Every individual split
+  // would be correct and the sequence would describe something that never
+  // happened — the same compounding the corrected close had before it was
+  // anchored to the original close.
+  const { rows: already } = await client.query<{ n: string }>(
+    `SELECT count(*) AS n FROM corporate_actions
+      WHERE kind = 'split' AND symbol = $1 AND ex_date = $2::date`,
+    [symbol, exDate],
+  );
+  if (Number(already[0].n) > 0) {
+    const { rows: free } = await client.query<{ symbol: string }>(
+      `SELECT DISTINCT l.commodity AS symbol
+         FROM journal_lines l
+        WHERE l.account_code = 'assets:positions'
+          AND NOT EXISTS (
+                SELECT 1 FROM corporate_actions ca
+                 WHERE ca.kind = 'split' AND ca.symbol = l.commodity
+                   AND ca.ex_date = $1::date
+              )
+        GROUP BY l.commodity
+       HAVING sum(l.units) > 0
+        ORDER BY 1`,
+      [exDate],
+    );
+    throw new Error(
+      `${symbol} has already been split with an ex-date of ${exDate}. Splitting ` +
+        `it again would halve the price and double the units a second time, ` +
+        `describing something that never happened.` +
+        (free.length
+          ? ` Still unsplit today and held by someone: ${free
+              .map((f) => f.symbol)
+              .join(', ')}.`
+          : ' Every held symbol has already been split today.'),
+    );
+  }
+
   // --- 1. the announcement ------------------------------------------------
   await client.query(
     `INSERT INTO corporate_actions

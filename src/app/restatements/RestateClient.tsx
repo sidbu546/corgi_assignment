@@ -10,10 +10,19 @@ export default function RestateClient({
   const [busy, setBusy] = useState<string | null>(null);
   const [log, setLog] = useState<Array<{ ok: boolean; title: string; body: string }>>([]);
 
+  /**
+   * `reload` refreshes the tables below after a scenario that changes them.
+   *
+   * The split must NOT reload, and that is not a preference. Its whole claim is
+   * that nothing below changes, so reloading destroys the only evidence there
+   * is — the before-and-after comparison held in this component's state — and
+   * leaves a screen that looks like the button did nothing at all.
+   */
   async function post(
     payload: unknown,
     label: string,
     endpoint = '/api/ops/correct-close',
+    reload = true,
   ) {
     setBusy(label);
     try {
@@ -27,7 +36,7 @@ export default function RestateClient({
         { ok: response.ok, title: `${label} — HTTP ${response.status}`, body: JSON.stringify(json, null, 2) },
         ...prev,
       ]);
-      if (response.ok) setTimeout(() => window.location.reload(), 1800);
+      if (response.ok && reload) setTimeout(() => window.location.reload(), 1800);
     } catch (error) {
       setLog((prev) => [{ ok: false, title: `${label} — network error`, body: String(error) }, ...prev]);
     } finally {
@@ -114,7 +123,9 @@ export default function RestateClient({
         <button
           className="btn"
           disabled={busy !== null}
-          onClick={() => post({ symbol: defaults.symbol }, 'Split', '/api/ops/split')}
+          onClick={() =>
+            post({ symbol: defaults.symbol }, 'Split', '/api/ops/split', false)
+          }
         >
           {busy === 'Split' ? 'Splitting…' : `Run a 2-for-1 split in ${defaults.symbol}`}
         </button>
