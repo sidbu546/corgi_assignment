@@ -24,6 +24,7 @@
     "inspect": "tsx scripts/inspect.ts",
     "demo-ready": "tsx scripts/demo-ready.ts",
     "browser-path": "tsx scripts/browser-path.ts",
+    "split-test": "tsx scripts/split-test.ts",
     "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {

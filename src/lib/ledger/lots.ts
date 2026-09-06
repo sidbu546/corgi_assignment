@@ -249,6 +249,21 @@ export async function loadLots(
       WHERE l.customer_id = $1::uuid
         AND l.symbol = $2
         AND l.recorded_at <= coalesce($3::timestamptz, 'infinity')
+        -- A lot that has been REPLACED is closed. Splits do not mutate a lot;
+        -- they close it and open a replacement with the adjusted units and the
+        -- same cost. Without this the original and its replacement would both
+        -- read as open and the position would double in the lot view while the
+        -- ledger said otherwise — FIFO would then consume a lot that no longer
+        -- exists and the realised gain on the next sale would be wrong.
+        --
+        -- The recorded_at bound is on the REPLACEMENT, not the original, so an
+        -- as-published view from before the split still sees the original lot
+        -- open. That is the same bitemporal rule the rest of the system uses.
+        AND NOT EXISTS (
+              SELECT 1 FROM tax_lots r
+               WHERE r.replaces_lot_id = l.id
+                 AND r.recorded_at <= coalesce($3::timestamptz, 'infinity')
+            )
       ORDER BY l.acquired_at, l.id`,
     [customerId, symbol, knownAt ?? null],
   );
