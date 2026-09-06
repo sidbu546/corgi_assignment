@@ -101,14 +101,13 @@ async function probeAll(): Promise<Probe[]> {
         cash?: string;
         status?: string;
       };
+      // The evidence for "direction, not balance" lives in this slot's note
+      // rather than here. A probe cell is a status line, not the argument.
       throw new Error(
         `account reachable and ${account.status ?? 'ACTIVE'} (cash_withdrawable ` +
           `$${Number(account.cash_withdrawable ?? account.cash ?? 0)}), but ` +
           `OUTGOING ACH returns 403 forbidden for these Broker sandbox ` +
-          `credentials — the direction is blocked, not the balance: an unknown ` +
-          `relationship id returns the same 403, so the direction is refused ` +
-          `before the request is read, while INCOMING answers 422 with a ` +
-          `specific business error`,
+          `credentials — the direction is blocked, not the balance`,
       );
     }),
 
