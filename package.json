@@ -23,6 +23,7 @@
     "demo": "tsx scripts/demo.ts",
     "inspect": "tsx scripts/inspect.ts",
     "demo-ready": "tsx scripts/demo-ready.ts",
+    "browser-path": "tsx scripts/browser-path.ts",
     "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
