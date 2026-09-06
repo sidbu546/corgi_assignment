@@ -105,9 +105,10 @@ async function probeAll(): Promise<Probe[]> {
         `account reachable and ${account.status ?? 'ACTIVE'} (cash_withdrawable ` +
           `$${Number(account.cash_withdrawable ?? account.cash ?? 0)}), but ` +
           `OUTGOING ACH returns 403 forbidden for these Broker sandbox ` +
-          `credentials — the direction is blocked, not the balance: a bogus ` +
-          `relationship id returns the same 403, while INCOMING answers 422 ` +
-          `with a specific business error`,
+          `credentials — the direction is blocked, not the balance: an unknown ` +
+          `relationship id returns the same 403, so the direction is refused ` +
+          `before the request is read, while INCOMING answers 422 with a ` +
+          `specific business error`,
       );
     }),
 
