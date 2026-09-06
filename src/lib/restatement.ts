@@ -228,14 +228,50 @@ export async function applyCorrectedClose(
     );
 
     for (const prior of priorReturns) {
+      // WHY THE REASON IS BUILT FROM THE OUTCOME, NOT ASSUMED.
+      //
+      // This used to assert that the price correction caused the change, for
+      // every prior figure it touched. That is not always true. A figure
+      // published before a fix to the RETURN CALCULATION will move even when
+      // the corrected price leaves the end value untouched — and then the
+      // screen states a cause that the numbers themselves contradict: the end
+      // value is identical, so the price cannot be what moved the return.
+      //
+      // A restatement that misattributes its own cause is worse than no
+      // restatement, because it is the record an auditor trusts. So the reason
+      // reports what is observably true and says plainly when the price is not
+      // the explanation.
+      //
+      // The figures are computed BEFORE publishing, because the reason depends
+      // on them and `published_returns` is append-only: there is no second
+      // chance to go back and correct the wording.
+      const recomputed = await performance(client, {
+        customerId: customer.id,
+        from: prior.period_start as MarketDate,
+        to: prior.period_end as MarketDate,
+      });
+      const endValueMoved = recomputed.endValueCents !== prior.end_value_cents;
+      const twrMoved = !recomputed.twr.equals(new Decimal(prior.twr));
+
+      const reason =
+        `Corrected closing price for ${input.symbol} on ${input.date}: ` +
+        `${correction.previousCents ?? 'unknown'} -> ${input.correctedPriceCents} cents. ` +
+        `${input.note}` +
+        (twrMoved && !endValueMoved
+          ? ` NOTE: the end value is unchanged, so this price correction does not ` +
+            `explain the change in the return. The earlier figure was published ` +
+            `before a correction to the return calculation itself — external ` +
+            `flows were not recognised when a deposit settled, so settling cash ` +
+            `was counted as performance. It is restated here rather than left ` +
+            `standing.`
+          : '');
+
       const fresh = await publishReturn(client, {
         customerId: customer.id,
         periodStart: prior.period_start as MarketDate,
         periodEnd: prior.period_end as MarketDate,
         restatesId: prior.id,
-        reason:
-          `Corrected closing price for ${input.symbol} on ${input.date}: ` +
-          `${correction.previousCents ?? 'unknown'} -> ${input.correctedPriceCents} cents. ${input.note}`,
+        reason,
       });
 
       restated.push({
