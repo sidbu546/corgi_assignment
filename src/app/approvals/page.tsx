@@ -1,6 +1,10 @@
 import { withClient } from '@/lib/db';
 import { requireOps } from '@/lib/session';
-import { listApprovals, APPROVAL_THRESHOLD_CENTS } from '@/lib/approvals';
+import {
+  listApprovals,
+  needsSecondPerson,
+  APPROVAL_THRESHOLD_CENTS,
+} from '@/lib/approvals';
 import { NEVER_FOR_AGENTS } from '@/lib/agent/tools';
 import { formatCents } from '@/lib/money';
 import ApprovalsClient, { type QueueRow } from './ApprovalsClient';
@@ -26,6 +30,12 @@ export default async function ApprovalsPage() {
     executed_entry_id: r.executed_entry_id,
     requested_at: new Date(r.requested_at).toISOString(),
     payload: (r.payload ?? {}) as Record<string, unknown>,
+    // Computed with the SAME function the route and the CHECK constraint agree
+    // with, rather than re-deciding it in the client from a formatted "$250.00"
+    // string. The screen previously blocked on "you raised it" alone, which was
+    // the rule before the threshold existed — so an identical $250 request could
+    // appear self-approved on one card and un-approvable on the next.
+    needs_second_person: needsSecondPerson(r),
   }));
 
   const pending = queue.filter((q) => q.status === 'pending').length;

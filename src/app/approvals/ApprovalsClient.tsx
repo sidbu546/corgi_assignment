@@ -15,6 +15,12 @@ export interface QueueRow {
   executed_entry_id: string | null;
   requested_at: string;
   payload: Record<string, unknown>;
+  /**
+   * Whether a DIFFERENT person must decide this one. Computed on the server by
+   * the same function the API and the CHECK constraint agree with — the client
+   * must not re-derive a money control from a formatted amount string.
+   */
+  needs_second_person: boolean;
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -68,6 +74,8 @@ export default function ApprovalsClient({
 
       {rows.map((r) => {
         const isMine = r.requested_by === me;
+        // Raising it only blocks you when a second person is actually required.
+        const blocked = isMine && r.needs_second_person;
         const pending = r.status === 'pending';
         const approved = r.status === 'approved';
         return (
@@ -131,10 +139,13 @@ export default function ApprovalsClient({
               ))}
             </dl>
 
-            {isMine && pending && (
+            {blocked && pending && (
               <div className="callout callout-warn">
                 <p style={{ margin: 0, fontSize: 12.5 }}>
                   <strong>You raised this request, so you cannot approve it.</strong>{' '}
+                  {r.requested_by_kind === 'agent'
+                    ? 'An agent proposal always needs a human decision, at any amount.'
+                    : 'It is above the threshold, so it needs a second pair of eyes.'}{' '}
                   Sign in as the other ops user to decide. The database refuses
                   self-approval as a CHECK constraint — the buttons below are hidden
                   as a courtesy, not as the control.
@@ -142,8 +153,19 @@ export default function ApprovalsClient({
               </div>
             )}
 
+            {isMine && pending && !blocked && (
+              <div className="callout">
+                <p style={{ margin: 0, fontSize: 12.5 }}>
+                  <strong>You raised this, and you may decide it.</strong> It is at
+                  or under the threshold, which is the stated policy: one pair of
+                  eyes below, two above. The database enforces exactly that — it
+                  would refuse your decision if this were a cent larger.
+                </p>
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {pending && !isMine && (
+              {pending && !blocked && (
                 <>
                   <button
                     className="btn btn-primary"
@@ -161,7 +183,7 @@ export default function ApprovalsClient({
                   </button>
                 </>
               )}
-              {pending && isMine && (
+              {pending && blocked && (
                 <button className="btn" disabled title="You raised this request">
                   Approve (blocked — you raised it)
                 </button>
