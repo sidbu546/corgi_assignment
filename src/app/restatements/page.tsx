@@ -83,15 +83,41 @@ export default async function RestatementsPage() {
 
   // Pair each restatement with the row it superseded.
   const byId = new Map(data.returns.map((r) => [r.id, r]));
-  const restatements = (
-    data.returns
-      .filter((r) => r.restates_id)
-      .map((r) => ({ corrected: r, original: byId.get(r.restates_id!) ?? null }))
-      .filter((p) => p.original !== null) as Array<{
-      corrected: ReturnRow;
-      original: ReturnRow;
-    }>
-  )
+  const allPairs = data.returns
+    .filter((r) => r.restates_id)
+    .map((r) => ({ corrected: r, original: byId.get(r.restates_id!) ?? null }))
+    .filter((p) => p.original !== null) as Array<{
+    corrected: ReturnRow;
+    original: ReturnRow;
+  }>;
+
+  // ONLY THE CURRENT VERSION OF EACH PERIOD.
+  //
+  // A period can be restated many times — a demo that presses the button
+  // repeatedly accumulates a pair per press, and every one of them is a real
+  // historical record. Showing them all stacked meant the same customer and the
+  // same period appeared several times with different numbers, which reads as
+  // the page contradicting itself rather than as a version history.
+  //
+  // Worse in combination with the sort below: "biggest change first" floats the
+  // OLDEST pair to the top forever, because the earliest published figures were
+  // computed before the external-flow fix and therefore differ most. The
+  // headline became a superseded comparison.
+  //
+  // Nothing is deleted — every version is still in published_returns, and the
+  // count is surfaced so the depth is visible rather than implied.
+  const versionsOf = new Map<string, number>();
+  const currentPairs = new Map<string, (typeof allPairs)[number]>();
+  for (const pair of allPairs) {
+    const key = `${pair.corrected.legal_name}|${pair.corrected.period_start}|${pair.corrected.period_end}`;
+    versionsOf.set(key, (versionsOf.get(key) ?? 0) + 1);
+    const held = currentPairs.get(key);
+    if (!held || pair.corrected.published_at > held.corrected.published_at) {
+      currentPairs.set(key, pair);
+    }
+  }
+
+  const restatements = [...currentPairs.values()]
     // Biggest change first. A correction also produces restatements that move
     // by exactly zero — the periods that SPAN the corrected date, where
     // time-weighted return telescopes — and leading with one of those reads as
@@ -172,6 +198,18 @@ export default async function RestatementsPage() {
                   {corrected.period_start} .. {corrected.period_end}
                 </span>
                 <span className="badge badge-info">restated</span>
+                {(versionsOf.get(
+                  `${corrected.legal_name}|${corrected.period_start}|${corrected.period_end}`,
+                ) ?? 1) > 1 && (
+                  <span className="dim" style={{ fontSize: 11.5 }}>
+                    current version — this period has been restated{' '}
+                    {versionsOf.get(
+                      `${corrected.legal_name}|${corrected.period_start}|${corrected.period_end}`,
+                    )}{' '}
+                    times; every earlier version is still in{' '}
+                    <span className="mono">published_returns</span>
+                  </span>
+                )}
               </div>
 
               <div className="table-wrap">
