@@ -15,7 +15,16 @@
  * do here — the UI keeps working and says plainly which data is stale and why.
  */
 
-export type ProviderMode = 'live' | 'simulated';
+/**
+ * live       real provider, real credentials, the operation completes
+ * simulated  built in-house; no third party is called at all
+ * blocked    a REAL call is made to a real provider on every attempt, and the
+ *            provider currently refuses it. Neither 'live' nor 'simulated' is
+ *            honest for this: 'live' implies the operation works, 'simulated'
+ *            implies we made something up. The refusal is shown verbatim so
+ *            the claim is checkable rather than categorical.
+ */
+export type ProviderMode = 'live' | 'simulated' | 'blocked';
 
 export interface ProviderSlot {
   id: string;
@@ -133,20 +142,23 @@ export const PROVIDER_SLOTS: ProviderSlot[] = [
   {
     id: 'withdrawal_rail',
     slot: 'Withdrawal — money leaving to the bank',
-    provider: 'Built in-house — SIMULATED',
-    mode: 'simulated',
+    provider: 'Alpaca Broker API (sandbox)',
+    mode: 'blocked',
+    endpoint: 'https://broker-api.sandbox.alpaca.markets',
     note:
-      'The outgoing ACH is genuinely ATTEMPTED at Alpaca on every execution, ' +
-      'and whatever the rail answers is written into the journal entry — a ' +
-      'transfer id when it accepts, the refusal verbatim when it does not. ' +
-      'Today it refuses: the account holds cash 0 because the incoming deposit ' +
-      'is still SENT_TO_CLEARING, and money cannot leave an account nothing ' +
-      'has arrived in. That is why this slot is marked simulated rather than ' +
-      'live — not because the call is faked, but because the leg does not ' +
-      'currently complete. When the deposit settles the same code path yields ' +
-      'a real transfer id and nothing here changes. The maker-checker control ' +
-      'around the instruction is real either way: the constraints refuse a ' +
-      'self-approval whether or not an ACH follows.',
+      'Nothing here is faked. Every execution really does POST an OUTGOING ACH ' +
+      'to Alpaca, and Alpaca really does refuse it — 403 "forbidden", because ' +
+      'the account holds cash 0 while the incoming deposit sits at ' +
+      'SENT_TO_CLEARING. Money cannot leave an account nothing has arrived in. ' +
+      'The refusal is written verbatim into the journal entry, so the evidence ' +
+      'is in the ledger even though a rejected call leaves no transfer record ' +
+      'at the broker to look up. ' +
+      'Marked BLOCKED rather than simulated or live: "simulated" would imply we ' +
+      'invented a transfer, "live" would imply the money reaches the bank. ' +
+      'Neither is true. When the deposit settles, the same code path returns a ' +
+      'real transfer id and this row turns green with nothing rewritten. ' +
+      'The maker-checker control around the instruction is real either way — ' +
+      'the constraints refuse a self-approval whether or not an ACH follows.',
     requiredEnv: [],
   },
   {

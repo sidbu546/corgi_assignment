@@ -58,6 +58,9 @@ export default async function Home() {
   const slots = slotStatuses();
   const live = slots.filter((s) => s.mode === 'live');
   const simulated = slots.filter((s) => s.mode === 'simulated');
+  // 'blocked' is neither: a real call to a real provider that the provider
+  // currently refuses. Counting it as live would overstate; as simulated would
+  // understate. It gets counted nowhere and labelled precisely instead.
 
   return (
     <>
@@ -175,20 +178,24 @@ export default async function Home() {
                 className={`badge ${
                   s.disabled
                     ? 'badge-down'
-                    : s.mode === 'live'
-                      ? s.configured
-                        ? 'badge-live'
-                        : 'badge-muted'
-                      : 'badge-sim'
+                    : s.mode === 'blocked'
+                      ? 'badge-sim'
+                      : s.mode === 'live'
+                        ? s.configured
+                          ? 'badge-live'
+                          : 'badge-muted'
+                        : 'badge-sim'
                 }`}
               >
                 {s.disabled
                   ? 'disabled'
-                  : s.mode === 'live'
-                    ? s.configured
-                      ? 'live'
-                      : 'no keys'
-                    : 'simulated'}
+                  : s.mode === 'blocked'
+                    ? 'live · refused'
+                    : s.mode === 'live'
+                      ? s.configured
+                        ? 'live'
+                        : 'no keys'
+                      : 'simulated'}
               </span>
             </div>
             {s.endpoint && (

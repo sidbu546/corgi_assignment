@@ -1,4 +1,5 @@
 import { slotStatuses } from '@/lib/providers/registry';
+import { query } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -69,6 +70,38 @@ async function probeAll(): Promise<Probe[]> {
       return (
         `account ${account.account_number}, ${account.status}, ` +
         `buying power ${money(account.buying_power)}`
+      );
+    }),
+
+    // Read-only, deliberately. Probing this slot by attempting a real transfer
+    // would move money on every page load if it ever succeeded. So it asks the
+    // precondition instead: does the account hold cash the rail could send?
+    // That is the exact reason an OUTGOING ACH is refused, and it flips to a
+    // positive statement the moment a deposit settles.
+    timed('withdrawal_rail', async () => {
+      const rows = await query<{ alpaca_account_id: string }>(
+        `SELECT alpaca_account_id FROM customers
+          WHERE alpaca_account_id IS NOT NULL
+          ORDER BY recorded_at DESC LIMIT 1`,
+      );
+      if (!rows[0]) return 'no brokerage account yet — nothing to send from';
+
+      const auth = Buffer.from(
+        `${process.env.ALPACA_BROKER_KEY_ID}:${process.env.ALPACA_BROKER_SECRET}`,
+      ).toString('base64');
+      const res = await fetch(
+        `${process.env.ALPACA_BROKER_BASE_URL}/v1/trading/accounts/${rows[0].alpaca_account_id}/account`,
+        { headers: { Authorization: `Basic ${auth}` }, signal: withTimeout(8000) },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const account = (await res.json()) as { cash_withdrawable?: string; cash?: string };
+      const withdrawable = Number(account.cash_withdrawable ?? account.cash ?? 0);
+      if (withdrawable > 0) {
+        return `cash_withdrawable $${withdrawable} — an outgoing ACH would be accepted`;
+      }
+      throw new Error(
+        'cash_withdrawable $0 at the broker — an outgoing ACH is refused with ' +
+          '403 forbidden until the incoming deposit settles',
       );
     }),
 
@@ -157,20 +190,24 @@ export default async function IntegrationsPage() {
                       className={`badge ${
                         s.disabled
                           ? 'badge-down'
-                          : s.mode === 'live'
-                            ? s.configured
-                              ? 'badge-live'
-                              : 'badge-muted'
-                            : 'badge-sim'
+                          : s.mode === 'blocked'
+                            ? 'badge-sim'
+                            : s.mode === 'live'
+                              ? s.configured
+                                ? 'badge-live'
+                                : 'badge-muted'
+                              : 'badge-sim'
                       }`}
                     >
                       {s.disabled
                         ? 'disabled'
-                        : s.mode === 'live'
-                          ? s.configured
-                            ? 'live'
-                            : 'no keys'
-                          : 'simulated'}
+                        : s.mode === 'blocked'
+                          ? 'live · refused'
+                          : s.mode === 'live'
+                            ? s.configured
+                              ? 'live'
+                              : 'no keys'
+                            : 'simulated'}
                     </span>
                   </td>
                   <td className="mono" style={{ fontSize: 12 }}>
