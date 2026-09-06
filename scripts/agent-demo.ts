@@ -26,10 +26,12 @@ import {
   proposeWithdrawal,
 } from '../src/lib/agent/tools';
 import {
+  APPROVAL_THRESHOLD_CENTS,
   ApprovalError,
   decideApproval,
   executeApproval,
 } from '../src/lib/approvals';
+import { formatCents } from '../src/lib/money';
 
 const CUSTOMER = process.argv[2] ?? 'dana@demo.ledgerly.app';
 const AGENT = 'agent:demo';
@@ -160,27 +162,46 @@ async function main() {
         }),
     );
 
-    // A human raises one, so self-approval can be tested on the human path too.
-    const { rows: humanRows } = await client.query<{ id: string }>(
-      `INSERT INTO approvals
-         (action_type, payload, amount_cents, customer_id, requested_by,
-          requested_by_kind, status)
-       SELECT 'withdrawal', '{"note":"human-raised"}'::jsonb, 25000, c.id, $1,
-              'human', 'pending'
-         FROM customers c WHERE c.email = $2
-       RETURNING id`,
-      [MAKER, CUSTOMER],
-    );
+    // A human raises one, so the threshold can be tested on the human path in
+    // BOTH directions. It is not enough to prove the control refuses; a control
+    // that refuses everything is indistinguishable from one that is stuck on.
+    const raiseHuman = async (amountCents: bigint): Promise<string> => {
+      const { rows } = await client.query<{ id: string }>(
+        `INSERT INTO approvals
+           (action_type, payload, amount_cents, customer_id, requested_by,
+            requested_by_kind, status)
+         SELECT 'withdrawal', '{"note":"human-raised"}'::jsonb, $3, c.id, $1,
+                'human', 'pending'
+           FROM customers c WHERE c.email = $2
+         RETURNING id`,
+        [MAKER, CUSTOMER, amountCents.toString()],
+      );
+      return rows[0].id;
+    };
 
+    const overThreshold = await raiseHuman(APPROVAL_THRESHOLD_CENTS + 1n);
     await expectRefusal(
-      'a human cannot approve their own request',
+      `above ${formatCents(APPROVAL_THRESHOLD_CENTS)}, a human cannot approve their own request`,
       'self_approval',
       () =>
         decideApproval(client, {
-          approvalId: humanRows[0].id,
+          approvalId: overThreshold,
           decidedBy: MAKER,
           decision: 'approved',
         }),
+    );
+
+    const underThreshold = await raiseHuman(APPROVAL_THRESHOLD_CENTS);
+    const selfDecided = await decideApproval(client, {
+      approvalId: underThreshold,
+      decidedBy: MAKER,
+      decision: 'approved',
+      note: 'At or under the threshold, one pair of eyes is the stated policy.',
+    });
+    check(
+      `at or under ${formatCents(APPROVAL_THRESHOLD_CENTS)}, one human may decide their own request`,
+      selfDecided.status === 'approved' && selfDecided.decided_by === MAKER,
+      'the threshold relaxes as well as refuses — otherwise it is not a threshold',
     );
 
     console.log('\n=== THE HAPPY PATH: a different human approves, then executes ===\n');

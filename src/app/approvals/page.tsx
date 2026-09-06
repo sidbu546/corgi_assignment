@@ -37,9 +37,13 @@ export default async function ApprovalsPage() {
       <p className="lede">
         Money-out above{' '}
         <span className="mono">{formatCents(APPROVAL_THRESHOLD_CENTS)}</span> needs a
-        second pair of eyes. The initiator can never approve their own request, and
-        an agent can never approve anything at all — it may propose, and that is
-        the entire extent of its authority.
+        second pair of eyes, and that threshold is a CHECK constraint rather than a
+        sentence on this page — the database refuses it, so it holds from{' '}
+        <span className="mono">psql</span> too. At or under it, one human may decide
+        their own request. Above it, or raised by an agent at{' '}
+        <em>any</em> amount, a different person must decide. And an agent can never
+        approve anything at all — it may propose, and that is the entire extent of
+        its authority.
       </p>
 
       <div className="grid grid-3" style={{ marginBottom: 16 }}>

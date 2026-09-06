@@ -14,6 +14,8 @@
 
 import '../pg-types';
 import { Client } from 'pg';
+import { APPROVAL_THRESHOLD_CENTS } from '../approvals';
+import { formatCents } from '../money';
 
 export interface InvariantCheck {
   group: string;
@@ -271,6 +273,71 @@ export async function runInvariants(connectionString?: string): Promise<Invarian
         `INSERT INTO approvals (action_type, payload, requested_by, requested_by_kind, decided_by, status)
          VALUES ('withdrawal', '{}'::jsonb, 'maker@example.test', 'human', 'checker@example.test', 'approved')`);
     });
+
+    // The threshold, probed at its exact boundary FROM THE TYPESCRIPT CONSTANT.
+    // A CHECK constraint cannot read application config, so this is what keeps
+    // 0008_approval_threshold.sql and APPROVAL_THRESHOLD_CENTS from drifting: if
+    // the constant moves and the migration does not, one of these two fails.
+    const atThreshold = APPROVAL_THRESHOLD_CENTS;
+    const overThreshold = APPROVAL_THRESHOLD_CENTS + 1n;
+
+    await expectAccepted(
+      G4,
+      `at or under ${formatCents(atThreshold)}, one human may decide their own request`,
+      'the stated threshold is the enforced threshold',
+      async () => {
+        await client.query(
+          `INSERT INTO approvals (action_type, payload, amount_cents, requested_by,
+                                  requested_by_kind, decided_by, status)
+           VALUES ('withdrawal', '{}'::jsonb, $1, 'solo@example.test', 'human',
+                   'solo@example.test', 'approved')`,
+          [atThreshold.toString()],
+        );
+      },
+    );
+
+    await expectRejection(
+      G4,
+      `one cent over the threshold, the same human is refused`,
+      /approvals_no_self_approval/i,
+      async () => {
+        await client.query(
+          `INSERT INTO approvals (action_type, payload, amount_cents, requested_by,
+                                  requested_by_kind, decided_by, status)
+           VALUES ('withdrawal', '{}'::jsonb, $1, 'solo@example.test', 'human',
+                   'solo@example.test', 'approved')`,
+          [overThreshold.toString()],
+        );
+      },
+    );
+
+    await expectRejection(
+      G4,
+      'an agent cannot self-approve even for one cent',
+      /approvals_no_self_approval/i,
+      async () => {
+        await client.query(
+          `INSERT INTO approvals (action_type, payload, amount_cents, requested_by,
+                                  requested_by_kind, decided_by, status)
+           VALUES ('withdrawal', '{}'::jsonb, 1, 'agent:probe', 'agent',
+                   'agent:probe', 'approved')`,
+        );
+      },
+    );
+
+    await expectRejection(
+      G4,
+      'an unknown amount is never treated as under the threshold',
+      /approvals_no_self_approval/i,
+      async () => {
+        await client.query(
+          `INSERT INTO approvals (action_type, payload, amount_cents, requested_by,
+                                  requested_by_kind, decided_by, status)
+           VALUES ('withdrawal', '{}'::jsonb, NULL, 'solo@example.test', 'human',
+                   'solo@example.test', 'approved')`,
+        );
+      },
+    );
 
     // ---- group 5: trial balance ------------------------------------------
     const G5 = 'Trial balance';
