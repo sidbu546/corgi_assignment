@@ -161,6 +161,13 @@ async function main() {
     );
 
     // A human raises one, so self-approval can be tested on the human path too.
+    //
+    // The row is deleted again once the probe has run. It needs to exist for
+    // the constraint to refuse a decision on it; the queue does not need to
+    // keep it. Leaving it behind put HUMAN cards into a console whose only way
+    // to raise anything is the agent, so the screen contradicted the very rule
+    // it was demonstrating. Deleting is safe here and only here: the row was
+    // never decided and never executed, so no journal entry refers to it.
     const { rows: humanRows } = await client.query<{ id: string }>(
       `INSERT INTO approvals
          (action_type, payload, amount_cents, customer_id, requested_by,
@@ -182,6 +189,7 @@ async function main() {
           decision: 'approved',
         }),
     );
+    await client.query('DELETE FROM approvals WHERE id = $1::uuid', [humanRows[0].id]);
 
     console.log('\n=== THE HAPPY PATH: a different human approves, then executes ===\n');
 
@@ -241,27 +249,6 @@ async function main() {
       `USD nets to ${tb[0].cents}`,
     );
 
-    // ---------------------------------------------------------------------
-    // Leave one behind, PENDING, for the browser.
-    //
-    // Everything above proves the boundaries and then consumes its own
-    // evidence: the agent's proposal is approved and executed as part of the
-    // happy path, so nothing agent-raised survives in the queue. The single
-    // most important state to be able to SHOW — an agent has asked, a human
-    // must decide — was the one state /approvals could never display.
-    // ---------------------------------------------------------------------
-    const standing = await proposeWithdrawal(client, {
-      customer: CUSTOMER,
-      amount: '1500',
-      reason: 'left pending on purpose, so the queue always has a live example',
-      agentId: AGENT,
-    });
-    check(
-      'a pending agent proposal is left in the queue for the browser',
-      standing.status === 'pending',
-      'visit /approvals as ops to approve and execute it — that is the maker-checker demo',
-    );
-
     console.log(`\n${'='.repeat(72)}`);
     if (failures > 0) {
       console.log(`${failures} check(s) FAILED`);
@@ -271,9 +258,10 @@ async function main() {
       'An agent may read anything and propose anything. It may not decide, move, or erase.',
     );
     console.log(
-      `\nOne agent proposal for $1,500.00 is now PENDING in /approvals. Sign in as` +
-        `\n${MAKER} and you will be able to approve it: you did not raise it, the` +
-        `\nagent did, and an agent proposal always needs a human at any amount.`,
+      `\nThe queue is left clean: the human-raised probe is deleted once it has` +
+        `\nbeen refused, so no HUMAN card is left in a console whose only way to` +
+        `\nraise anything is the agent. To put a real request in front of a` +
+        `\nchecker, use the ops console — enter an amount and the agent raises it.`,
     );
   } finally {
     client.release();
