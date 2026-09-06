@@ -1,5 +1,6 @@
 import { withClient } from '@/lib/db';
 import { requireOps } from '@/lib/session';
+import ReconClient from './ReconClient';
 import { formatCents } from '@/lib/money';
 import { severity, type BreakClassification } from '@/lib/recon';
 
@@ -108,6 +109,8 @@ export default async function ReconPage() {
         because an ops team handed a flat list of every mismatch every morning
         stops reading it by Thursday, and then misses the one that mattered.
       </p>
+
+      <ReconClient />
 
       <div className="grid grid-3" style={{ marginBottom: 16 }}>
         <div className="card">
