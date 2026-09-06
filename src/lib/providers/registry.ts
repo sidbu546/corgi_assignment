@@ -147,16 +147,21 @@ export const PROVIDER_SLOTS: ProviderSlot[] = [
     endpoint: 'https://broker-api.sandbox.alpaca.markets',
     note:
       'Nothing here is faked. Every execution really does POST an OUTGOING ACH ' +
-      'to Alpaca, and Alpaca really does refuse it — 403 "forbidden", because ' +
-      'the account holds cash 0 while the incoming deposit sits at ' +
-      'SENT_TO_CLEARING. Money cannot leave an account nothing has arrived in. ' +
+      'to Alpaca, and Alpaca really does refuse it: 403 "forbidden". ' +
       'The refusal is written verbatim into the journal entry, so the evidence ' +
       'is in the ledger even though a rejected call leaves no transfer record ' +
       'at the broker to look up. ' +
+      'WHY it refuses was tested rather than assumed, because the first ' +
+      'explanation was wrong. It is NOT a funds check: an OUTGOING transfer ' +
+      'with a nonexistent relationship id returns the same 403, so Alpaca ' +
+      'rejects the direction before reading the request. The same endpoint ' +
+      'validates INCOMING properly and answers with specific business errors ' +
+      '(422 "maximum number of ACH transfers allowed is 1 per trading day"). ' +
+      'So outgoing ACH is simply not permitted for these Broker sandbox ' +
+      'credentials, and settling the deposit will not change that. ' +
       'Marked BLOCKED rather than simulated or live: "simulated" would imply we ' +
       'invented a transfer, "live" would imply the money reaches the bank. ' +
-      'Neither is true. When the deposit settles, the same code path returns a ' +
-      'real transfer id and this row turns green with nothing rewritten. ' +
+      'Neither is true. ' +
       'The maker-checker control around the instruction is real either way — ' +
       'the constraints refuse a self-approval whether or not an ACH follows.',
     requiredEnv: [],

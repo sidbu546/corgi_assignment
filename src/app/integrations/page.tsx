@@ -73,11 +73,13 @@ async function probeAll(): Promise<Probe[]> {
       );
     }),
 
-    // Read-only, deliberately. Probing this slot by attempting a real transfer
-    // would move money on every page load if it ever succeeded. So it asks the
-    // precondition instead: does the account hold cash the rail could send?
-    // That is the exact reason an OUTGOING ACH is refused, and it flips to a
-    // positive statement the moment a deposit settles.
+    // Read-only, deliberately: probing by attempting a real transfer would move
+    // money on every page load if it ever succeeded.
+    //
+    // It reports the credentials working AND the direction being blocked,
+    // because those are two different facts and only the first is provable by a
+    // read. That outgoing ACH is refused at the DIRECTION level was established
+    // by test, not inference — see the note on this slot in registry.ts.
     timed('withdrawal_rail', async () => {
       const rows = await query<{ alpaca_account_id: string }>(
         `SELECT alpaca_account_id FROM customers
@@ -94,14 +96,18 @@ async function probeAll(): Promise<Probe[]> {
         { headers: { Authorization: `Basic ${auth}` }, signal: withTimeout(8000) },
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const account = (await res.json()) as { cash_withdrawable?: string; cash?: string };
-      const withdrawable = Number(account.cash_withdrawable ?? account.cash ?? 0);
-      if (withdrawable > 0) {
-        return `cash_withdrawable $${withdrawable} — an outgoing ACH would be accepted`;
-      }
+      const account = (await res.json()) as {
+        cash_withdrawable?: string;
+        cash?: string;
+        status?: string;
+      };
       throw new Error(
-        'cash_withdrawable $0 at the broker — an outgoing ACH is refused with ' +
-          '403 forbidden until the incoming deposit settles',
+        `account reachable and ${account.status ?? 'ACTIVE'} (cash_withdrawable ` +
+          `$${Number(account.cash_withdrawable ?? account.cash ?? 0)}), but ` +
+          `OUTGOING ACH returns 403 forbidden for these Broker sandbox ` +
+          `credentials — the direction is blocked, not the balance: a bogus ` +
+          `relationship id returns the same 403, while INCOMING answers 422 ` +
+          `with a specific business error`,
       );
     }),
 

@@ -265,9 +265,10 @@ async function attemptOutgoingTransfer(
       providerError: message.slice(0, 300),
       narrative:
         `[OUTGOING ACH ATTEMPTED AND REFUSED by the broker — ${message.slice(0, 200)}. ` +
-        `The money moved on our books and not on the rail. Typically this is ` +
-        `because the incoming deposit has not settled, so the account holds no ` +
-        `cash to send. The approval controls around this instruction are real.]`,
+        `The money moved on our books and not on the rail. Outgoing ACH is not ` +
+        `permitted for these Broker sandbox credentials: the same 403 comes back ` +
+        `for a nonexistent relationship, so the direction is refused before the ` +
+        `request is read. The approval controls around this instruction are real.]`,
     };
   }
 }
