@@ -123,7 +123,7 @@ export default async function RestatementsPage() {
                   AND e.recorded_at >= ca.recorded_at
                   AND e.recorded_at < ca.recorded_at + interval '5 seconds') AS units_added
          FROM corporate_actions ca
-        WHERE ca.kind = 'split'
+        WHERE ca.kind = 'split' AND ca.reverses_id IS NULL
         ORDER BY ca.recorded_at DESC
         LIMIT 10`,
     );
@@ -141,6 +141,11 @@ export default async function RestatementsPage() {
                 SELECT 1 FROM corporate_actions ca
                  WHERE ca.kind = 'split' AND ca.symbol = l.commodity
                    AND ca.ex_date = current_date
+                   AND ca.reverses_id IS NULL
+                   AND NOT EXISTS (
+                         SELECT 1 FROM corporate_actions r
+                          WHERE r.reverses_id = ca.id
+                       )
               )
         GROUP BY l.commodity
        HAVING sum(l.units) > 0
