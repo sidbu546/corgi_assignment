@@ -22,6 +22,7 @@ dividend, a corrected close — history is **restated, never rewritten**.
 
 | Page | Why it matters |
 |---|---|
+| [`/flow`](https://corgi-assignment.vercel.app/flow) | **Start here.** The six steps of the brief as one story for one customer — each with the **provider's own identifier** next to the journal entries it produced. |
 | [`/invariants`](https://corgi-assignment.vercel.app/invariants) | Attempts every forbidden operation against the **production database, on that request**, and shows Postgres refusing each one. Runs in a rolled-back transaction, so opening it changes nothing. |
 | [`/integrations`](https://corgi-assignment.vercel.app/integrations) | Live-vs-simulated labelling, with a **real HTTP probe** of each live provider performed when the page loads. |
 | [`/ledger`](https://corgi-assignment.vercel.app/ledger) | The journal, with `effective_at` beside `recorded_at` on every entry, and the trial balance netting to zero per commodity. |

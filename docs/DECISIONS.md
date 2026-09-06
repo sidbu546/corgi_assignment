@@ -1256,3 +1256,37 @@ named on the page.
 `happy-path` before it started suffixing names. Not a bug, but two identical
 names on an ops screen reads as a duplicate-record problem, which is a bad thing
 to have to explain mid-demo. Renamed to A and B.
+
+---
+
+## 2026-09-06T09:00Z — /flow: the six steps as one story
+
+**Prompted by "can I see this on the website fully".** The honest answer was:
+every piece existed, spread across six pages, and no page told the story. A
+reviewer had to already know the architecture to assemble it.
+
+`/flow` walks the brief's own six steps for one customer, and each step shows
+three things deliberately:
+
+1. what happened
+2. **the provider's own identifier**
+3. the journal entries it produced
+
+**The middle one is the point.** Our ledger agreeing with itself proves
+bookkeeping. It proves nothing about whether a third party ever heard from us.
+So every step surfaces the id you can look up in Persona, Plaid or Alpaca —
+inquiry ids, ACH relationship ids, transfer ids, broker order ids — sitting
+directly beside the entry it produced in our books. One identifier, two
+independent systems.
+
+**It also states the boundary rather than hiding it.** Step 3 shows orders as
+`accepted` at the broker, with a note that they are live and reserving buying
+power but that equity fills need market hours, and the next US open is Tuesday
+8 September because Monday is Labor Day. An unfilled order is an instruction,
+not a holding — and the page says so where someone is looking at it, not only in
+the README.
+
+**Companion, for the same question from the other side:** `npm run evidence`
+asks Alpaca, Plaid and Persona directly what they hold, without reading our
+database at all. Between the two, the claim "money moved" can be checked from
+either end.

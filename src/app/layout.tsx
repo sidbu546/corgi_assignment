@@ -18,10 +18,12 @@ const PUBLIC_NAV = [
 ];
 
 const CUSTOMER_NAV = [
+  { href: '/flow', label: 'Money path' },
   { href: '/portfolio', label: 'Portfolio' },
   { href: '/fund', label: 'Fund & invest' },
 ];
 const OPS_NAV = [
+  { href: '/flow', label: 'Money path' },
   { href: '/ops', label: 'Ops console' },
   { href: '/recon', label: 'Reconciliation' },
   { href: '/restatements', label: 'Restatements' },
