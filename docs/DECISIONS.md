@@ -1162,3 +1162,52 @@ balance trigger fired after the first leg. Production is fine — it goes throug
 the cause, so `postEntry`'s contract now says so in capitals. A deferred
 constraint is a sharp tool: it gives you atomic multi-leg entries, and it
 punishes anyone who forgets the transaction with a confusing error.
+
+---
+
+## 2026-09-06T07:00Z — A breaks screen that was hiding breaks
+
+**Found by a reviewer**, not by me, and it is the worst class of bug this
+project could have shipped.
+
+`reconcile()` creates one recon_run **per customer**. The `/recon` page selected
+`DISTINCT ON (as_of_date)` — the newest run **per date** — on the assumption
+that a morning produces one run. So the screen showed only whichever customer
+happened to be reconciled last, and silently dropped everyone else's breaks.
+
+The command line reported Dana, Marcus and Robin with breaks each. The screen
+showed Robin alone, and looked entirely plausible doing it.
+
+**Why this one stings.** The entire argument for the reconciliation screen is
+that a break must not get lost. A screen that quietly hides breaks is worse than
+no screen at all, because it manufactures confidence. And it failed silently:
+nothing errored, no count looked wrong, the page just showed less than the truth.
+
+**Fix.** Select the newest break per **(customer, as-of date)**, not per date.
+Verified against the deployed page: all three customers now appear, with the
+genuine position breaks and the unbooked dividends visible for each.
+
+**The lesson worth keeping.** I tested the reconciliation ENGINE thoroughly —
+clean run produces zero breaks, planted run produces exactly two per customer —
+and did not test that the SCREEN showed what the engine found. Correct logic
+behind a lossy query is indistinguishable, from the outside, from broken logic.
+
+---
+
+## 2026-09-06T07:10Z — Restatements were leading with the case that does not move
+
+**Also found by looking at the screen** rather than the test output.
+
+A correction produces restatements for every affected period, including the
+periods that SPAN the corrected date — which, because time-weighted return
+telescopes, move by exactly 0.00%. The page listed them newest-first, so the
+headline was often a row reading `+46.32% -> +46.32%, difference +0.00%`.
+
+That reads as "the restatement did nothing", which is precisely the wrong
+conclusion to invite when the machinery works.
+
+**Fix.** Order by the absolute size of the change, so the period that actually
+moved leads. And the zero-difference rows now explain themselves in place —
+"unchanged, and correctly so; this period spans the corrected date rather than
+ending on it" — because the telescoping property is genuinely interesting and
+worth showing, just not first.

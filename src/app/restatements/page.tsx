@@ -83,13 +83,25 @@ export default async function RestatementsPage() {
 
   // Pair each restatement with the row it superseded.
   const byId = new Map(data.returns.map((r) => [r.id, r]));
-  const restatements = data.returns
-    .filter((r) => r.restates_id)
-    .map((r) => ({ corrected: r, original: byId.get(r.restates_id!) ?? null }))
-    .filter((p) => p.original !== null) as Array<{
-    corrected: ReturnRow;
-    original: ReturnRow;
-  }>;
+  const restatements = (
+    data.returns
+      .filter((r) => r.restates_id)
+      .map((r) => ({ corrected: r, original: byId.get(r.restates_id!) ?? null }))
+      .filter((p) => p.original !== null) as Array<{
+      corrected: ReturnRow;
+      original: ReturnRow;
+    }>
+  )
+    // Biggest change first. A correction also produces restatements that move
+    // by exactly zero — the periods that SPAN the corrected date, where
+    // time-weighted return telescopes — and leading with one of those reads as
+    // "the restatement did nothing". They are worth showing, just not first.
+    .sort((a, b) =>
+      new Decimal(b.corrected.twr)
+        .minus(b.original.twr)
+        .abs()
+        .comparedTo(new Decimal(a.corrected.twr).minus(a.original.twr).abs()),
+    );
 
   return (
     <>
@@ -219,6 +231,19 @@ export default async function RestatementsPage() {
                 </table>
               </div>
 
+              {delta.isZero() && (
+                <p
+                  className="dim"
+                  style={{ fontSize: 12.5, margin: '8px 0 0', color: 'var(--warn)' }}
+                >
+                  <strong>Unchanged, and correctly so.</strong> This period{' '}
+                  <em>spans</em> the corrected date rather than ending on it. Because
+                  time-weighted return telescopes, the lower value on the corrected
+                  day and the higher return the next day cancel exactly, so the
+                  cumulative figure cannot move. It is restated anyway, so the
+                  recomputation is on the record.
+                </p>
+              )}
               {corrected.restatement_reason && (
                 <p className="dim" style={{ fontSize: 12, margin: '8px 0 0' }}>
                   {corrected.restatement_reason}

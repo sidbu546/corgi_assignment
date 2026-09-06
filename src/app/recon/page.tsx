@@ -47,8 +47,12 @@ export default async function ReconPage() {
          FROM recon_runs ORDER BY started_at DESC LIMIT 10`,
     );
 
-    // Only the newest run per as-of date: an earlier run for the same morning
-    // has been superseded, and showing both would double-count every break.
+    // The newest run per (as-of date, CUSTOMER).
+    //
+    // reconcile() creates one run PER CUSTOMER, so an earlier version of this
+    // query that took the newest run per DATE showed only whichever customer
+    // happened to be reconciled last and silently hid everyone else's breaks.
+    // A breaks screen that hides breaks is worse than no breaks screen.
     const { rows: breaks } = await client.query<BreakRow>(
       `SELECT b.id, c.legal_name, b.break_type, b.classification, b.symbol,
               b.ours_units, b.theirs_units, b.ours_cents, b.theirs_cents,
@@ -58,9 +62,13 @@ export default async function ReconPage() {
          FROM recon_breaks b
          JOIN recon_runs r ON r.id = b.run_id
          JOIN customers c ON c.id = b.customer_id
-        WHERE r.id IN (
-              SELECT DISTINCT ON (as_of_date) id FROM recon_runs
-               ORDER BY as_of_date DESC, started_at DESC
+        WHERE b.id IN (
+              SELECT DISTINCT ON (b2.customer_id, r2.as_of_date) b2.id
+                FROM recon_breaks b2
+                JOIN recon_runs r2 ON r2.id = b2.run_id
+               WHERE r2.as_of_date = (SELECT max(as_of_date) FROM recon_runs)
+               ORDER BY b2.customer_id, r2.as_of_date, r2.started_at DESC,
+                        b2.classification, b2.id
         )
         ORDER BY
           CASE
