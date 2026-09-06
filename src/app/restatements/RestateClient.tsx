@@ -2,6 +2,30 @@
 
 import { useState } from 'react';
 
+/** The shape /api/ops/split returns, so the comparison can be rendered as a
+ *  table rather than a JSON blob. A reviewer should not have to read JSON to
+ *  see whether the return moved. */
+interface SplitResponse {
+  symbol: string;
+  ratio: string;
+  price: { before: string; after: string };
+  verdict: string;
+  note: string;
+  comparison: Array<{
+    customer: string;
+    units: { before: string; after: string };
+    marketValue: { before: string; after: string; unchanged: boolean };
+    costBasis: { before: string; after: string; unchanged: boolean };
+    portfolioValue: { before: string; after: string; unchanged: boolean };
+    timeWeightedReturn: {
+      before: string;
+      after: string;
+      unchangedTo12dp: boolean;
+      exact: string;
+    };
+  }>;
+}
+
 export default function RestateClient({
   defaults,
 }: {
@@ -9,6 +33,7 @@ export default function RestateClient({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [log, setLog] = useState<Array<{ ok: boolean; title: string; body: string }>>([]);
+  const [split, setSplit] = useState<SplitResponse | null>(null);
 
   /**
    * `reload` refreshes the tables below after a scenario that changes them.
@@ -32,6 +57,7 @@ export default function RestateClient({
         body: JSON.stringify(payload),
       });
       const json = await response.json();
+      if (endpoint === '/api/ops/split' && response.ok) setSplit(json as SplitResponse);
       setLog((prev) => [
         { ok: response.ok, title: `${label} — HTTP ${response.status}`, body: JSON.stringify(json, null, 2) },
         ...prev,
@@ -135,6 +161,78 @@ export default function RestateClient({
           and that would be the bug hiding behind the test meant to catch it.
         </p>
       </div>
+
+      {split && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
+            <span className="badge badge-live">{split.ratio} split applied</span>
+            <strong style={{ fontSize: 13 }}>{split.symbol}</strong>
+            <span className="mono dim" style={{ fontSize: 12 }}>
+              price ${split.price.before} → ${split.price.after}
+            </span>
+          </div>
+
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th className="num">Units</th>
+                  <th className="num">Market value</th>
+                  <th className="num">Cost basis</th>
+                  <th className="num">Portfolio</th>
+                  <th className="num">Time-weighted return</th>
+                </tr>
+              </thead>
+              <tbody>
+                {split.comparison.map((c) => (
+                  <>
+                    <tr key={`${c.customer}-b`}>
+                      <td style={{ fontWeight: 600 }}>{c.customer}</td>
+                      <td className="num dim">{c.units.before}</td>
+                      <td className="num dim">{c.marketValue.before}</td>
+                      <td className="num dim">{c.costBasis.before}</td>
+                      <td className="num dim">{c.portfolioValue.before}</td>
+                      <td className="num dim">{c.timeWeightedReturn.before}</td>
+                    </tr>
+                    <tr key={`${c.customer}-a`}>
+                      <td className="dim" style={{ fontSize: 12 }}>after the split</td>
+                      <td className="num" style={{ color: 'var(--info)', fontWeight: 600 }}>
+                        {c.units.after}
+                      </td>
+                      <td className="num">{c.marketValue.after}</td>
+                      <td className="num">{c.costBasis.after}</td>
+                      <td className="num">{c.portfolioValue.after}</td>
+                      <td className="num">{c.timeWeightedReturn.after}</td>
+                    </tr>
+                    <tr key={`${c.customer}-v`}>
+                      <td></td>
+                      <td className="num" style={{ color: 'var(--info)' }}>doubled</td>
+                      <td className="num" style={{ color: c.marketValue.unchanged ? 'var(--accent)' : 'var(--danger)' }}>
+                        {c.marketValue.unchanged ? 'unchanged' : 'MOVED'}
+                      </td>
+                      <td className="num" style={{ color: c.costBasis.unchanged ? 'var(--accent)' : 'var(--danger)' }}>
+                        {c.costBasis.unchanged ? 'unchanged' : 'MOVED'}
+                      </td>
+                      <td className="num" style={{ color: c.portfolioValue.unchanged ? 'var(--accent)' : 'var(--danger)' }}>
+                        {c.portfolioValue.unchanged ? 'unchanged' : 'MOVED'}
+                      </td>
+                      <td className="num mono" style={{ fontSize: 11.5, color: c.timeWeightedReturn.unchangedTo12dp ? 'var(--accent)' : 'var(--danger)' }}>
+                        {c.timeWeightedReturn.unchangedTo12dp
+                          ? `unchanged · ${c.timeWeightedReturn.exact}`
+                          : 'MOVED'}
+                      </td>
+                    </tr>
+                  </>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <p style={{ fontSize: 12.5, margin: '10px 0 0' }}>{split.verdict}</p>
+          <p className="dim" style={{ fontSize: 12, margin: '6px 0 0' }}>{split.note}</p>
+        </div>
+      )}
 
       {log.length > 0 &&
         log.map((entry, i) => (

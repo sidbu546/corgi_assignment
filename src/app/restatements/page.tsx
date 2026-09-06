@@ -78,7 +78,57 @@ export default async function RestatementsPage() {
         LIMIT 20`,
     );
 
-    return { returns, prices, runs };
+    // Corporate actions applied, with the units they moved. Persistent, so the
+    // evidence for a split survives a page reload — a reviewer should be able
+    // to see what happened without having to press the button themselves.
+    const { rows: splits } = await client.query<{
+      symbol: string;
+      ratio: string;
+      ex_date: string;
+      recorded_at: Date;
+      price_before: string | null;
+      price_after: string | null;
+      holders: number;
+      units_added: string | null;
+    }>(
+      `SELECT ca.symbol,
+              ca.split_numerator || '-for-' || ca.split_denominator AS ratio,
+              to_char(ca.ex_date, 'YYYY-MM-DD') AS ex_date,
+              ca.recorded_at,
+              (SELECT p.price_cents FROM prices p
+                WHERE p.id = (SELECT sp.supersedes_id FROM prices sp
+                               WHERE sp.symbol = ca.symbol
+                                 AND sp.source = 'corporate_action:split'
+                                 AND sp.recorded_at >= ca.recorded_at
+                               ORDER BY sp.recorded_at LIMIT 1)) AS price_before,
+              (SELECT sp.price_cents FROM prices sp
+                WHERE sp.symbol = ca.symbol
+                  AND sp.source = 'corporate_action:split'
+                  AND sp.recorded_at >= ca.recorded_at
+                ORDER BY sp.recorded_at LIMIT 1) AS price_after,
+              (SELECT count(DISTINCT l.customer_id)::int
+                 FROM journal_lines l
+                 JOIN journal_entries e ON e.id = l.entry_id
+                WHERE e.kind = 'corporate_action.split'
+                  AND l.commodity = ca.symbol
+                  AND l.customer_id IS NOT NULL
+                  AND e.recorded_at >= ca.recorded_at
+                  AND e.recorded_at < ca.recorded_at + interval '5 seconds') AS holders,
+              (SELECT sum(l.units)
+                 FROM journal_lines l
+                 JOIN journal_entries e ON e.id = l.entry_id
+                WHERE e.kind = 'corporate_action.split'
+                  AND l.commodity = ca.symbol
+                  AND l.customer_id IS NOT NULL
+                  AND e.recorded_at >= ca.recorded_at
+                  AND e.recorded_at < ca.recorded_at + interval '5 seconds') AS units_added
+         FROM corporate_actions ca
+        WHERE ca.kind = 'split'
+        ORDER BY ca.recorded_at DESC
+        LIMIT 10`,
+    );
+
+    return { returns, prices, runs, splits };
   });
 
   // Pair each restatement with the row it superseded.
@@ -296,6 +346,63 @@ export default async function RestatementsPage() {
       )}
 
       {/* ---------------- price supersession ---------------- */}
+      {data.splits.length > 0 && (
+        <>
+          <h2>Splits applied</h2>
+          <p className="lede" style={{ fontSize: 13 }}>
+            A split is the control case: units and price move in opposite
+            directions by the same factor, so every money figure has to stand
+            still. Kept here so the evidence outlives the button press.
+          </p>
+          <div className="table-wrap" style={{ marginBottom: 18 }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th>Ratio</th>
+                  <th>Ex-date</th>
+                  <th className="num">Price before</th>
+                  <th className="num">Price after</th>
+                  <th className="num">Holders</th>
+                  <th className="num">Units created</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.splits.map((s, i) => (
+                  <tr key={i}>
+                    <td style={{ fontWeight: 600 }}>{s.symbol}</td>
+                    <td className="mono" style={{ fontSize: 12 }}>{s.ratio}</td>
+                    <td className="mono" style={{ fontSize: 12 }}>{s.ex_date}</td>
+                    <td className="num">
+                      {s.price_before
+                        ? `$${(Number(s.price_before) / 100).toFixed(4)}`
+                        : '—'}
+                    </td>
+                    <td className="num" style={{ color: 'var(--info)' }}>
+                      {s.price_after
+                        ? `$${(Number(s.price_after) / 100).toFixed(4)}`
+                        : '—'}
+                    </td>
+                    <td className="num">{s.holders}</td>
+                    <td className="num mono" style={{ fontSize: 12 }}>
+                      {s.units_added ? Number(s.units_added).toFixed(6) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="dim" style={{ fontSize: 12 }}>
+            Units created equals the units already held, because doubling adds
+            exactly what was there. They face{' '}
+            <span className="mono">equity:external:market</span> — not the bank —
+            so they are not counted as an external flow and the return cannot
+            move. No USD line appears in a split entry at all, which is why cost
+            basis cannot drift.
+          </p>
+        </>
+      )}
+
       <h2>Price supersession</h2>
       {data.prices.length === 0 ? (
         <p className="dim">No corrected prices yet.</p>
