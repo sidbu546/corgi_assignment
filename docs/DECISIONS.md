@@ -1758,3 +1758,55 @@ was true — the cross-customer "leakage" I chased earlier was one session cooki
 per browser, not an app bug — but it explained a browser to a reviewer who
 already knows how browsers work, on the one page that should be the shortest in
 the app.
+
+---
+
+## 2026-09-07T01:51 EDT — A capability nobody can reach is indistinguishable from one that does not work
+
+`read.ts` has taken `{ asOf, knownAt }` since the first migration, and its doc
+comment already set out the three questions people conflate:
+
+```
+asOf = today,  knownAt = now    what is the balance
+asOf = 3 Sep,  knownAt = now    what was it on 3 Sep, given all we know now
+asOf = 3 Sep,  knownAt = 3 Sep  what did we BELIEVE it was on 3 Sep
+```
+
+Valuation, performance and restatement all thread both through. **None of it was
+reachable from a browser.** "We are bitemporal" was a claim supported by a type
+signature, which is exactly the claim a reviewer should refuse to take on trust.
+
+**Decided.** `/asof` asks all three at once and then explains the difference
+instead of only showing it — the facts effective on or before the date but
+recorded after it. That list comes from the same predicate pair that produced
+the difference above it, asked for rows instead of sums, so the explanation
+cannot drift from the number it explains.
+
+**The firm trial balance is checked at every coordinate**, not only today.
+Summing to zero now is easy. Summing to zero as at an arbitrary historical
+instant is the property that says nothing was ever edited, and it is cheap to
+show because there is no snapshot table to disagree with — every figure is
+folded from journal lines under two `WHERE` clauses.
+
+**Midnight is New York's.** `new Date('2026-09-03')` is 20:00 on the 2nd in New
+York, so using it as the `knownAt` bound would cut four hours off the wrong end
+of the day. Same trap as the valuation bug four hours earlier in this log; the
+second time you meet a bug class it should cost minutes.
+
+**The uncomfortable part, kept rather than hidden.** For any date before the
+seed ran, "as we knew then" is empty — we knew nothing, because we did not
+exist. It reads like a bug, so the page says which it is. It is also the
+strongest thing on the screen: the seeded history is backdated in *effective*
+time and truthful in *record* time, and a seed that faked its audit trail would
+have backdated `recorded_at` too, leaving that column full of figures nobody
+could have known. The honest empty column is better evidence than a full one.
+
+**A test stopped asserting a provider's state.** smoke-ui named Priya as pending
+and Alex as rejected. Both went red — a demo run approved Alex, and Persona
+declined Priya on its own eight seconds after I restored her. The requirement
+has no names in it: *a customer who is not approved must be gated and told why.*
+The test now finds whoever is in each state and checks the behaviour there, and
+prints a NOTE when a state is empty rather than a green tick for a test that did
+nothing. Third instance of one rule: **our record of a provider's state is not
+the provider's state** — after the unlink that trusted our own rows, and the
+login page that printed a KYC label it did not read.
