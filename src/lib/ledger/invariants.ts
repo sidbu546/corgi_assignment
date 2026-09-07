@@ -338,8 +338,97 @@ export async function runInvariants(connectionString?: string): Promise<Invarian
       },
     );
 
-    // ---- group 5: trial balance ------------------------------------------
-    const G5 = 'Trial balance';
+    // ---- group 5: out-of-order provider delivery --------------------------
+    //
+    // Persona genuinely delivers out of order. A real run delivered
+    // `inquiry.declined` BEFORE `inquiry.created`, and the KYC gate — which
+    // reads "the latest event" — then showed a declined customer as merely
+    // pending. Pending is a soft block; declined is a hard one. Getting this
+    // backwards fails a KYC gate OPEN, which is the worst direction to fail in.
+    //
+    // The fix was to order by the provider's own event time rather than by when
+    // we happened to receive it. That fix had no test, so it was one careless
+    // ORDER BY away from silently coming back.
+    //
+    // This replays the exact delivery that caused it: Persona's clock says the
+    // decline happened LATER, our clock says we received it EARLIER.
+    const G5 = 'Out-of-order provider delivery';
+
+    const kycProbe = async () => {
+      // effective_at = Persona's timestamp. recorded_at = ours.
+      // Note recorded_at must be set explicitly: now() is TRANSACTION start
+      // time in Postgres, so two inserts here would otherwise share it and the
+      // out-of-order condition could not be expressed at all.
+      await client.query(
+        `INSERT INTO kyc_events
+           (customer_id, status, provider, effective_at, recorded_at, reason)
+         VALUES
+           -- arrived FIRST, but happened SECOND
+           ($1::uuid, 'rejected', 'persona',
+            '2026-09-01T10:05:00Z', '2026-09-01T10:30:00Z',
+            'Persona reported inquiry.declined'),
+           -- arrived SECOND, but happened FIRST
+           ($1::uuid, 'pending',  'persona',
+            '2026-09-01T10:00:00Z', '2026-09-01T10:31:00Z', NULL)`,
+        [customer.id],
+      );
+    };
+
+    await probe(async () => {
+      await kycProbe();
+
+      // The gate's own query, character for character from kycStatus() in
+      // onboarding.ts. If that ordering is ever changed, this check goes red.
+      const { rows: byEventTime } = await client.query<{ status: string }>(
+        `SELECT status::text AS status FROM kyc_events
+          WHERE customer_id = $1::uuid
+          ORDER BY effective_at DESC, recorded_at DESC, id DESC LIMIT 1`,
+        [customer.id],
+      );
+
+      // What the bug did: trust our receipt order.
+      const { rows: byArrival } = await client.query<{ status: string }>(
+        `SELECT status::text AS status FROM kyc_events
+          WHERE customer_id = $1::uuid
+          ORDER BY recorded_at DESC, id DESC LIMIT 1`,
+        [customer.id],
+      );
+
+      record(
+        G5,
+        'a decline delivered before its own creation still gates the customer',
+        byEventTime[0]?.status === 'rejected',
+        `provider event time says '${byEventTime[0]?.status}'`,
+      );
+
+      // Asserting the WRONG ordering is genuinely wrong keeps this honest: if
+      // the two orderings agreed, the check above would pass for free and prove
+      // nothing about which one the gate uses.
+      record(
+        G5,
+        'ordering by arrival instead would fail the gate open',
+        byArrival[0]?.status === 'pending',
+        `arrival order says '${byArrival[0]?.status}' — a hard block softened to a soft one`,
+      );
+
+      // And the reason has to survive, or the customer is blocked with no
+      // explanation and support has nothing to work from.
+      const { rows: reason } = await client.query<{ reason: string | null }>(
+        `SELECT reason FROM kyc_events
+          WHERE customer_id = $1::uuid
+          ORDER BY effective_at DESC, recorded_at DESC, id DESC LIMIT 1`,
+        [customer.id],
+      );
+      record(
+        G5,
+        'the decline carries its reason',
+        (reason[0]?.reason ?? '').length > 0,
+        `reason: ${reason[0]?.reason ?? '(none)'}`,
+      );
+    });
+
+    // ---- group 6: trial balance ------------------------------------------
+    const G6 = 'Trial balance';
 
     const { rows: totals } = await client.query<{
       commodity: string; cents: string | null; units: string | null;
@@ -349,7 +438,7 @@ export async function runInvariants(connectionString?: string): Promise<Invarian
     for (const row of totals) {
       const cents = BigInt(row.cents ?? '0');
       const units = Number(row.units ?? 0);
-      record(G5, `nets to zero in ${row.commodity}`, cents === 0n && units === 0,
+      record(G6, `nets to zero in ${row.commodity}`, cents === 0n && units === 0,
         `sum(cents)=${cents}, sum(units)=${units}`);
     }
   } finally {

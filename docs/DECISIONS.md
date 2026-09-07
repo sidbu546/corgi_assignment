@@ -1810,3 +1810,42 @@ prints a NOTE when a state is empty rather than a green tick for a test that did
 nothing. Third instance of one rule: **our record of a provider's state is not
 the provider's state** — after the unlink that trusted our own rows, and the
 login page that printed a KYC label it did not read.
+
+---
+
+## 2026-09-07T02:04 EDT — The bug that failed a gate open had no test
+
+Yesterday's out-of-order fix — order the KYC history by **Persona's** event time
+rather than by when we happened to receive it — was one careless `ORDER BY`
+away from silently coming back, because nothing tested it.
+
+It is worth being precise about why this one matters more than its size
+suggests. Persona delivered `inquiry.declined` **before** `inquiry.created` in a
+real run. Ordering by arrival made the newest event `pending`. Pending is a soft
+block; declined is a hard one. So the failure mode was a KYC gate **failing
+open** — the single worst direction for a control to fail in, and invisible,
+because a customer showing as pending looks like a customer who is simply early.
+
+**Decided.** Put it in the invariant suite rather than the unit tests. The
+property is about row ordering under a real schema, and the suite already runs
+inside a rolled-back transaction against the production database, which is
+exactly the environment where an ordering bug would be real.
+
+The probe replays the actual delivery: Persona's clock says the decline happened
+later, our clock says we received it earlier. Then it runs **the gate's own
+query, character for character** from `kycStatus()`, so changing that ordering
+turns this red.
+
+**One extra check that keeps it honest.** It also asserts that ordering by
+arrival gives the *wrong* answer. Without that, the two orderings might happen
+to agree on the probe data, the real check would pass for free, and the suite
+would be proving nothing while looking green. A test that cannot fail is
+decoration.
+
+**Also had to set `recorded_at` explicitly**, which is a small Postgres fact
+worth writing down: `now()` is TRANSACTION start time, so two inserts in the
+same transaction share it, and the out-of-order condition could not have been
+expressed at all with the column default.
+
+32/32 invariants. README counts updated in the same commit, since the last time
+they drifted it was because a number moved and the prose did not.
