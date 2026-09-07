@@ -16,6 +16,7 @@ dividend, a corrected close — history is **restated, never rewritten**.
 |---|---|
 | **Deployed app** | **https://corgi-assignment.vercel.app** |
 | **Repository** | https://github.com/sidbu546/corgi_assignment |
+| **System design** | [`docs/DESIGN.md`](docs/DESIGN.md) — the settled architecture: data model, the money path, where the return comes from, what would change at 100× |
 | **Decision log** | [`docs/DECISIONS.md`](docs/DECISIONS.md) — written as the work happened |
 | **Evidence pack** | [`evidence/`](evidence/) — each provider's own dashboard, with what each capture proves |
 

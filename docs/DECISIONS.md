@@ -1849,3 +1849,33 @@ expressed at all with the column default.
 
 32/32 invariants. README counts updated in the same commit, since the last time
 they drifted it was because a number moved and the prose did not.
+
+---
+
+## 2026-09-07T02:41 EDT — A design document, and the claim it made me check
+
+`DECISIONS.md` is a log — chronological, and it assumes you were there. A
+reviewer arriving cold needs the settled picture instead: what the tables are,
+where a number comes from, which rules the database enforces rather than the
+code. So `docs/DESIGN.md`, with the data model, the money path as a sequence,
+the flow-boundary rule, the provider modes, and what would change at 100×.
+
+**Writing it caught two things I had been saying loosely.**
+
+Append-only is on **ten** tables, not the four I would have named from memory —
+`settlements`, `order_events`, `cash_transfer_events`, `corporate_actions` and
+`published_returns` as well as the journal, prices, lots and consumptions. The
+`published_returns` one is not decoration: it is why `applyCorrectedClose` has to
+compute its figures *before* publishing rather than patch the wording after.
+
+And I nearly wrote "Persona and Alpaca sign their webhooks". **Alpaca signs
+nothing.** It exposes SSE streams that our own bridge consumes and posts inward
+under a shared-secret HMAC — so the signature attests to *our bridge*, not to
+Alpaca. The original diagram drew all three providers as signed webhooks, which
+overstates what is cryptographically established. Fixed in both the prose and the
+diagram.
+
+That second one is the reason to write the document at all. Prose forces you to
+say precisely who is trusting whom, and a diagram that is one arrow too generous
+is exactly the kind of thing that reads as a simulated integration presented as
+live.
