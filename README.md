@@ -328,7 +328,8 @@ Each row names a command you can run rather than a claim you have to take.
 
 **Not yet built**
 
-- Installment/recurring deposits, and the second product line — see the cut list.
+- Recurring deposits, specific-ID lot selection, and a tax report. See the
+  [cut list](#cut-list), which also records the gaps I found in what *is* built.
 
 ---
 
@@ -378,20 +379,44 @@ and the executor refuses any decider or executor identity prefixed `agent:`.
 
 ## Cut list
 
-Deliberately not built, and what week two would add.
+### Deliberately not built
 
 | Cut | Why |
 |---|---|
 | Mobile app | The brief makes portal choice a scoping call. A web app that works on a phone beats a second codebase in 48 hours. |
-| Multi-currency | Explicitly out of scope. Those hours went into lot accounting and restatements. |
+| Multi-currency | Explicitly out of scope. The ledger is **already** multi-commodity, so USD/EUR is the same machinery as USD/VOO — what is missing is FX rates as a priced fact and a reporting-currency choice, not a schema change. |
 | Money-weighted return | TWR is the headline figure. MWR is a second view on the same flow data — a week-two addition, not a v1 gap. |
 | Options, margin, shorting | `planDisposal` refuses to sell units not held rather than silently opening a short. |
 | Performance-fee accrual | Real product need, no bearing on whether the ledger is honest. |
+| Self-directed trading | Discretionary model portfolios only. Single-symbol entry is a route away — the order path underneath is already per-symbol notional orders — but it carries different suitability obligations, which is a product decision rather than a build one. |
 
-**Week two, in priority order:** specific-ID lot selection; a tax report an
-accountant would accept; model-portfolio versioning and drift; recurring
-deposits with a standing instruction; USDC withdrawal confirming on Base
-Sepolia, ledgered identically to ACH.
+### Known gaps in what *is* built
+
+Not scope decisions — defects and loose ends I found in my own work. A cut list
+containing only the things I chose not to build would be marketing.
+
+| Gap | What it means |
+|---|---|
+| **No open-order reserve** | `/api/invest` checks `amount > investable`, computed from journal lines — and an open order has no journal line. So with $2,000 investable you can place two $2,000 orders and both pass. Real brokers hold buying power against open orders. The broker-side check catches this on a normal account, but the paper venue is **omnibus**, so its buying power is firm-wide and will not catch one customer over-committing. Nothing breaks silently if it happens — the fills book honestly, cash goes negative, and reconciliation surfaces it — but the guard belongs at the front. |
+| **No ceiling on price staleness** | `resolvePrice` accepts a `maxStaleDays` and **no caller passes it**. A close from 200 days ago would still value the book. The age is recorded and badged, so nothing is hidden, but "handle the stale price honestly" should include an age at which we decline to produce a figure rather than mark to a fossil. |
+| **The superseded-inquiry rule has no test** | An event for a KYC inquiry that is no longer the customer's current one is recorded but not acted on. That rule lives in route code, so neither the invariant suite nor the unit tests reach it. It is pinned by a decision-log entry, which is the weakest form of pinning there is. |
+| **`browser-path` leaves permanent residue** | It opens a new customer and a real ACH on every run, and five such customers now sit on the books. A verification script you cannot run without changing the system is one you will avoid running — and a test you avoid running protects nothing. Needs a `--dry-run`, or to close what it opened. |
+| **No way to close a customer account** | Which is *why* those five are still visible. Money rows are append-only by design, so they cannot be deleted and should not be — three of them hold real booked cash, and removing it would blow a hole in the firm trial balance. The right answer is what a real firm does: close the account, keep the history, filter it from active lists. |
+| **Model versioning is half-built** | `model_versions` and `customer_mandates` exist and are written and read — a customer's mandate points at a specific model *version*. But `/fund` pins `v.version = 1`, so a second version is never created and drift against a mandate is never measured. The foundation is laid; the product does not use it. |
+
+### Week two, in priority order
+
+Gaps first, because they are defects rather than features:
+
+1. **Open-order reserve** against investable cash.
+2. **A staleness ceiling** on valuation, with the refusal surfaced.
+3. **Tests for the two rules that live in route code** — superseded inquiry, and the expiry-is-not-a-rejection mapping.
+4. **Close an account** — `closed_at`, filtered from active lists, history intact. Then `browser-path` cleans up after itself.
+5. **Specific-ID lot selection** — the comparator is already a parameter.
+6. **A tax report an accountant would accept.**
+7. **Model-portfolio versioning and drift**, on the schema that already supports it.
+8. **Recurring deposits** with a standing instruction.
+9. **USDC withdrawal confirming on Base Sepolia**, ledgered identically to ACH — which would also give the money path a withdrawal that actually completes, rather than one the rail refuses by direction.
 
 ---
 

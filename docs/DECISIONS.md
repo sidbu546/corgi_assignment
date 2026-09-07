@@ -2037,3 +2037,44 @@ confirmed before real money, in order — sandbox-to-production fidelity,
 cost-basis and 1099-B treatment by someone who does it for a living, and the
 settlement model against the actual custodian's rules rather than the general US
 ones. Everything else on that page I would defend as written.
+
+---
+
+## 2026-09-07T09:34 EDT — A cut list that only lists what you chose not to build is marketing
+
+Audited the cut list the way I audited the counts. It was credible as far as it
+went, and it went only one direction: five things I decided not to build, each
+with a reason. Nothing about what is *wrong* with what I did build.
+
+**Decided.** Three sections instead of one — deliberately cut, **known gaps in
+what is built**, then week two with the gaps first because defects outrank
+features.
+
+The middle section is the one that earns the word "credible". It carries six
+entries, all found by me, none flattering: no open-order reserve; no ceiling on
+price staleness because `maxStaleDays` is accepted and never passed; two rules
+living in route code that no test reaches; a verification script that leaves
+permanent residue on every run; no way to close an account, which is why that
+residue is still visible; and model versioning that is half-built.
+
+**One correction to the old list.** It offered "model-portfolio versioning and
+drift" as a week-two feature, implying absence. `model_versions` and
+`customer_mandates` are real, written, and read — a mandate points at a specific
+model *version*. What is missing is that `/fund` pins `v.version = 1`, so a
+second version never exists and drift is never measured. Saying "the foundation
+is laid, the product does not use it" is both more accurate and a stronger
+claim than implying it was never started.
+
+**Why put defects in a public README at all.** Because a reviewer will find at
+least some of them, and the difference between "they found it" and "they found
+it already written down, with its consequence stated" is the whole of the
+judgement criterion. The open-order gap in particular reads badly for half a
+sentence and then well: nothing breaks *silently*, because the fills book
+honestly and reconciliation surfaces the negative cash. That is the system
+behaving as designed under a condition I failed to guard — which is a better
+story than a guard I could claim.
+
+**Cost.** The README is longer, and the first-time reader now meets six
+admissions. I think that trade is right at this stage: the deployed system and
+the invariants make the affirmative case, so the document can afford to spend
+its words on the parts that need a human to explain them.
