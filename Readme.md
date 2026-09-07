@@ -30,6 +30,7 @@ dividend, a corrected close — history is **restated, never rewritten**.
 | [`/webhooks`](https://corgi-assignment.vercel.app/webhooks) | **Public, no sign-in.** Every inbound delivery with its signature verdict and how many times it arrived. |
 | [`/restatements`](https://corgi-assignment.vercel.app/restatements) | Two buttons that are the point of the page: a **corrected close**, which must move the return, and a **2-for-1 split**, which must not. Both measured either side of the same transaction. |
 | [`/recon`](https://corgi-assignment.vercel.app/recon) | The morning reconciliation, runnable on the spot — clean, then with breaks planted, so the classifier can be watched rather than described. |
+| [`/asof`](https://corgi-assignment.vercel.app/asof) | The two time axes, made movable: today, a past date **as we know it now**, and the same date **as we knew it then** — side by side, with the late-arriving facts that separate the last two. The firm trial balance is proved at each coordinate, not just today. |
 
 ### Demo credentials
 
@@ -168,13 +169,13 @@ than a subsystem. Corrections are **reversal + re-book**, never edits.
 ## Proving it rather than claiming it
 
 ```
-npm run verify     # 29 invariants, against the real database
+npm run verify     # 32 invariants, against the real database
 npm test           # 78 unit tests, no database required
 ```
 
 `npm run verify` and [`/invariants`](https://corgi-assignment.vercel.app/invariants)
 run **the same module**, so the page cannot drift into claiming something the CLI
-does not test. Current state: **29/29 holding, 78/78 tests passing.**
+does not test. Current state: **32/32 holding, 78/78 tests passing.**
 
 What it proves, by attempting each and requiring refusal:
 
@@ -261,7 +262,9 @@ Kept current rather than aspirational. The same table is rendered on the
 
 | | Proof you can run |
 |---|---|
-| Multi-commodity double-entry ledger, bitemporal, append-only | `npm run verify` — 29/29 |
+| Multi-commodity double-entry ledger, bitemporal, append-only | `npm run verify` — 32/32 |
+| As-of time travel: balances as at a past date, as published *and* as revised | [`/asof`](https://corgi-assignment.vercel.app/asof) — the trial balance is proved at each historical instant |
+| Out-of-order provider delivery cannot fail a KYC gate open | `npm run verify` — replays the decline that arrived before its own creation |
 | Money primitives, deterministic penny | `npm test` — 78 tests in total |
 | Tax lots, FIFO, realised gain, basis-drift proof | `npm test` |
 | Time-weighted return, flows structurally excluded | `npm test` — 10 tests pin the flow rule alone |
