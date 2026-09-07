@@ -43,5 +43,4 @@ npm run evidence
 ```
 
 Calls each provider's API and prints what **they** say exists — deliberately
-without reading our database, because a ledger can prove its own consistency and
-can prove nothing about whether a third party ever heard from us.
+without reading our database.
