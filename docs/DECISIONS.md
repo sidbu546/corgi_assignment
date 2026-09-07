@@ -10,6 +10,10 @@ git records UTC, so subtract four hours to line an entry up with its commits.
 
 Format: what I decided, why, what I assumed, what it costs me.
 
+The assumptions that span the whole build, rather than one entry, are collected
+in [`ASSUMPTIONS.md`](ASSUMPTIONS.md) — with what breaks if each is wrong and how
+you would find out. Entries here carry the assumption local to that decision.
+
 ---
 
 ## 2026-09-05T12:48 EDT — Track 2, investment app
@@ -1990,3 +1994,46 @@ without changing the system is one you will avoid running, and a test you avoid
 running protects nothing.** Week two: a `--dry-run`, or let it close what it
 opened. The customer rows can be closed even though the journal lines behind them
 cannot be deleted.
+
+---
+
+## 2026-09-07T09:14 EDT — The log promised assumptions and did not deliver them
+
+Line 11 of this file has said from the start: *"what I decided, why, **what I
+assumed**, what it costs me."* Across 62 entries, **two** carry an `Assumed`
+section. The format was a promise the log did not keep, which is worse than
+never having claimed it — a reviewer reading the preamble goes looking.
+
+**Decided.** `ASSUMPTIONS.md`, not a retro-fit. Editing sixty historical entries
+to insert assumptions I did not write at the time would be inventing a record,
+and it would scatter the answer across two thousand lines where nobody could
+read it whole. One page, grouped, readable in three minutes.
+
+**The format is the point.** Each assumption states what breaks if it is wrong
+**and how you would find out**. An assumption with no detection story is just a
+belief, and a list of beliefs is not worth writing down. Several entries turned
+out to have a real detection story already built — the settlement model is
+checked by reconciliation, the rounding bias has an actual account balance you
+can read, the threshold is probed at its boundary from the TypeScript constant.
+
+**Writing it caught another wrong count.** `DESIGN.md` said the chart of accounts
+was "thirteen accounts, which is the whole vocabulary". It is **fifteen** —
+`expenses:fees` and `expenses:rounding` were missing because I generated that
+list with a grep whose pattern did not match them, then wrote the total from what
+the grep returned.
+
+That is the second bad count in two hours, after "ten tests pin the flow rule"
+when it was eleven. Same root cause as this morning's timestamps, and the same
+lesson sharpened: **a number I derived correctly is evidence; a number I derived
+from a partial query and did not check the total of is a guess wearing
+evidence's clothes.** The fix is not to be more careful. It is to count the thing
+itself — `grep -c` on the source of truth, not `wc -l` on my own output.
+
+**What it cost.** Twenty minutes, and it closed a named sub-criterion I had been
+assuming was covered by the log format. It was not.
+
+**Stated plainly at the end of that page:** the three things I would want
+confirmed before real money, in order — sandbox-to-production fidelity,
+cost-basis and 1099-B treatment by someone who does it for a living, and the
+settlement model against the actual custodian's rules rather than the general US
+ones. Everything else on that page I would defend as written.

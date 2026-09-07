@@ -83,7 +83,7 @@ the return are all computed from these two tables.
 
 ### Chart of accounts
 
-Thirteen accounts, which is the whole vocabulary:
+Fifteen accounts, which is the whole vocabulary:
 
 | Account | Holds |
 |---|---|
@@ -99,6 +99,8 @@ Thirteen accounts, which is the whole vocabulary:
 | `equity:external:bank` | **The customer's bank, from our side.** |
 | `equity:external:market` | The counterparty in a trade. |
 | `equity:opening_balances` | Migration only. |
+| `expenses:fees` | Fees the firm bears, kept off customer basis. |
+| `expenses:rounding` | Where the unattributable penny goes. The house eats it, never the customer — and because it lands in a real account, the bias has a balance you can read. |
 
 The two `equity:external:*` accounts are the trick that makes single-entity
 double entry work: money and units have to come from *somewhere*, and these are
