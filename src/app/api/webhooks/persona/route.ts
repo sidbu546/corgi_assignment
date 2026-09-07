@@ -27,8 +27,30 @@ const STATUS_MAP: Record<string, 'pending' | 'approved' | 'rejected'> = {
   'inquiry.approved': 'approved',
   'inquiry.declined': 'rejected',
   'inquiry.failed': 'rejected',
-  'inquiry.expired': 'rejected',
+  // An expiry is ABANDONMENT, not a decision. Persona expires an inquiry nobody
+  // finished; it does not mean the person failed a check, because no check was
+  // ever completed. Mapping it to 'rejected' told the customer "identity
+  // verification was not successful" about a verification that never ran, and
+  // applied the hardest block we have on the strength of a timeout.
+  //
+  // 'pending' is the honest state: still unverified, still gated, and the way
+  // out is to start the flow again rather than to appeal a decision.
+  'inquiry.expired': 'pending',
 };
+
+/**
+ * Events that owe the customer an explanation. A decline needs one, and so does
+ * an expiry — "still in progress" with no reason, six hours after they walked
+ * away, is a dead end with no visible way out.
+ *
+ * Keyed on the EVENT, not the status: 'inquiry.created' also lands on 'pending'
+ * and needs no explanation at all.
+ */
+const EXPLAINED_EVENTS = new Set([
+  'inquiry.declined',
+  'inquiry.failed',
+  'inquiry.expired',
+]);
 
 interface PersonaEvent {
   data?: {
@@ -109,13 +131,47 @@ async function handlePersonaEvent(
     return `recorded but not acted on: no reference-id, cannot attribute to a customer`;
   }
 
-  const { rows } = await client.query<{ id: string; legal_name: string }>(
-    `SELECT id, legal_name FROM customers WHERE id = $1::uuid`,
+  const { rows } = await client.query<{
+    id: string;
+    legal_name: string;
+    persona_inquiry_id: string | null;
+  }>(
+    `SELECT id, legal_name, persona_inquiry_id FROM customers WHERE id = $1::uuid`,
     [referenceId],
   );
   const customer = rows[0];
   if (!customer) {
     return `recorded but not acted on: no customer matching reference-id ${referenceId}`;
+  }
+
+  // A SUPERSEDED inquiry must not decide the customer's status.
+  //
+  // Persona expires abandoned inquiries on its own clock, hours later. One such
+  // expiry arrived for an inquiry that had already been replaced, and because
+  // status was "the latest event by effective_at" regardless of which inquiry
+  // produced it, a dead inquiry reached forward and overwrote the live one.
+  //
+  // The rule: an event for an inquiry that is not the customer's current one is
+  // recorded but not acted on — PROVIDED we have seen that inquiry before.
+  // That proviso closes a race: a brand-new inquiry's first webhook can arrive
+  // before `customers.persona_inquiry_id` has been updated to point at it, and
+  // an unknown inquiry is far more likely to be that than a stale one.
+  if (
+    inquiryId &&
+    customer.persona_inquiry_id &&
+    inquiryId !== customer.persona_inquiry_id
+  ) {
+    const { rows: seen } = await client.query<{ n: string }>(
+      `SELECT count(*) AS n FROM kyc_events
+        WHERE customer_id = $1::uuid AND provider_ref = $2`,
+      [customer.id, inquiryId],
+    );
+    if (Number(seen[0]?.n ?? 0) > 0) {
+      return (
+        `recorded but not acted on: '${eventType}' is for superseded inquiry ` +
+        `${inquiryId}; the current inquiry is ${customer.persona_inquiry_id}`
+      );
+    }
   }
 
   // Append-only: a new event row, never an update. The history of states is the
@@ -142,7 +198,12 @@ async function handlePersonaEvent(
       customer.id,
       status,
       inquiryId,
-      status === 'rejected' ? `Persona reported ${eventType}` : null,
+      EXPLAINED_EVENTS.has(eventType)
+        ? eventType === 'inquiry.expired'
+          ? 'Persona reported inquiry.expired — the verification was never ' +
+            'completed and has timed out. Start it again to continue.'
+          : `Persona reported ${eventType}`
+        : null,
       JSON.stringify(event),
       eventAt,
     ],
