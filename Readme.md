@@ -17,6 +17,7 @@ dividend, a corrected close — history is **restated, never rewritten**.
 | **Deployed app** | **https://corgi-assignment.vercel.app** |
 | **Repository** | https://github.com/sidbu546/corgi_assignment |
 | **Decision log** | [`docs/DECISIONS.md`](docs/DECISIONS.md) — written as the work happened |
+| **Evidence pack** | [`evidence/`](evidence/) — each provider's own dashboard, with what each capture proves |
 
 ### Pages worth opening first
 
@@ -26,6 +27,9 @@ dividend, a corrected close — history is **restated, never rewritten**.
 | [`/invariants`](https://corgi-assignment.vercel.app/invariants) | Attempts every forbidden operation against the **production database, on that request**, and shows Postgres refusing each one. Runs in a rolled-back transaction, so opening it changes nothing. |
 | [`/integrations`](https://corgi-assignment.vercel.app/integrations) | Live-vs-simulated labelling, with a **real HTTP probe** of each live provider performed when the page loads. |
 | [`/ledger`](https://corgi-assignment.vercel.app/ledger) | The journal, with `effective_at` beside `recorded_at` on every entry, and the trial balance netting to zero per commodity. |
+| [`/webhooks`](https://corgi-assignment.vercel.app/webhooks) | **Public, no sign-in.** Every inbound delivery with its signature verdict and how many times it arrived. |
+| [`/restatements`](https://corgi-assignment.vercel.app/restatements) | Two buttons that are the point of the page: a **corrected close**, which must move the return, and a **2-for-1 split**, which must not. Both measured either side of the same transaction. |
+| [`/recon`](https://corgi-assignment.vercel.app/recon) | The morning reconciliation, runnable on the spot — clean, then with breaks planted, so the classifier can be watched rather than described. |
 
 ### Demo credentials
 
@@ -37,12 +41,23 @@ listed on that page.
 | **Customer** | `dana@demo.ledgerly.app` | `demo-password` | Funded. Two deposits, a Growth model, a FIFO sell across two lots, dividends. |
 | Customer | `marcus@demo.ledgerly.app` | `demo-password` | Funded, Balanced model. |
 | Customer | `priya@demo.ledgerly.app` | `demo-password` | **KYC pending** — gated, cannot transact. |
-| Customer | `alex@demo.ledgerly.app` | `demo-password` | **KYC rejected** — gated, with the reason shown. |
+| Customer | `alex@demo.ledgerly.app` | `demo-password` | **KYC rejected** — gated, with Persona's reason shown. |
 | **Ops** | `ops@demo.ledgerly.app` | `ops-password` | Ops console. The *maker*. |
 | Ops | `approver@demo.ledgerly.app` | `ops-password` | Ops console. The *checker* — a different identity, because nobody approves their own action. |
 
 Two gated customers are seeded on purpose: the brief asks for pending and
 rejected to be visible, not just the happy path.
+
+**Those two states are live, not fixtures.** The KYC controls on `/portfolio`
+call *Persona's own* sandbox endpoints, so pressing them really does move a
+customer — which means a demo can leave Priya or Alex in a different state than
+this table describes. `npm run seed -- --reset` restores the lot. Anyone can
+also open a brand-new account at
+[`/signup`](https://corgi-assignment.vercel.app/signup) and walk the whole path
+from nothing, which is the better demo: a new customer gets a new brokerage
+account, and Alpaca's one-ACH-per-account-per-trading-day limit means a
+customer who has already deposited cannot deposit again today.
+`npm run demo-ready` says who can.
 
 Passwords are scrypt-hashed with a per-user salt and compared in constant time;
 the session cookie is HMAC-signed, `httpOnly`, and expires in 12 hours.
@@ -70,6 +85,7 @@ commit.
 | Custodian file | Built in-house | 🟡 **SIMULATED** | Ships the morning positions/cash/transactions file and deliberately generates the late dividend and a tampered position. |
 | **ACH settlement notification** | Built in-house | 🟡 **SIMULATED** | The deposit is **live** — Plaid-verified ACH relationship, real Alpaca transfer, real transfer id, held at `SENT_TO_CLEARING`. Simulated is **only Alpaca telling us it completed**, which its sandbox does on trading days only. Entries say so *in the ledger*: kind `deposit.settled.simulated`, source `simulator:rail`. |
 | ACH returns | Built in-house | 🟡 **SIMULATED** | Plaid originates the deposit but will not bounce it days later with an R01. The simulator produces the return. |
+| **Withdrawal — money out to the bank** | Alpaca **Broker API** sandbox | 🟣 **LIVE · REFUSED** | Every execution really does `POST` an OUTGOING ACH, and Alpaca really does refuse it: `403 forbidden`. Neither "live" nor "simulated" is honest — the call is real, the leg does not complete — so it has its own mode and its own colour. Tested rather than assumed: an *unknown* relationship id returns the same 403, so the **direction** is refused before the request is read, while INCOMING answers 422 with a specific business error. The refusal is written verbatim into the journal entry. |
 
 **On the omnibus venue, stated plainly:** the paper account is one account
 shared by every customer routed to it — the broker cannot tell them apart. Every
@@ -144,19 +160,21 @@ than a subsystem. Corrections are **reversal + re-book**, never edits.
 | **Settlement** | **T+1, modelled not hidden.** Three cash buckets. Withdrawable = settled only. Investable = settled + unsettled proceeds (you may buy with unsettled proceeds; withdrawing them is free-riding). |
 | **The penny** | Largest-remainder allocation, ties broken by index — a pure function of its inputs, so a re-run of a closed period reproduces an identical document. **The house eats any unattributable residual**, never the customer. |
 | **Rounding** | Half away from zero, at one chokepoint. Chosen over banker's rounding because customers check arithmetic by hand. |
+| **Corporate actions** | A **2-for-1 split** doubles units, halves the price, and must move **nothing else**. The entry has *no USD line at all*, so total basis cannot drift and per-unit basis halves as arithmetic rather than as a write. New units face `equity:external:market`, never the bank, or they would classify as an external flow and the return would jump. Tax lots are **closed and replaced** via `replaces_lot_id`, never mutated. `npm run split-test` measures every figure either side and compares the return at **twelve** decimal places, because two different returns can print identically at two. |
+| **Maker-checker** | One rule, no branch: the **maker raises**, a **different person** approves *and* executes. Money-out enters the queue only **above the threshold**, so there is no second band behaving differently. Asking an agent to raise it does not launder it — the console records who triggered the agent, and that person is barred from deciding, by `CHECK` constraint. |
 
 ---
 
 ## Proving it rather than claiming it
 
 ```
-npm run verify     # 20 invariants, against the real database
-npm test           # 39 unit tests, no database required
+npm run verify     # 29 invariants, against the real database
+npm test           # 78 unit tests, no database required
 ```
 
 `npm run verify` and [`/invariants`](https://corgi-assignment.vercel.app/invariants)
 run **the same module**, so the page cannot drift into claiming something the CLI
-does not test. Current state: **20/20 holding, 39/39 tests passing.**
+does not test. Current state: **29/29 holding, 78/78 tests passing.**
 
 What it proves, by attempting each and requiring refusal:
 
@@ -164,7 +182,8 @@ What it proves, by attempting each and requiring refusal:
 - USD lines carrying units; instrument lines carrying cents
 - house accounts carrying a customer id; customer accounts missing one
 - `UPDATE`, `DELETE` and `TRUNCATE` on journal rows, prices and tax lots
-- self-approval (maker-checker enforced by a `CHECK` constraint, not a code path)
+- self-approval, self-**execution**, and approving what you asked an agent to raise — all `CHECK` constraints, not code paths
+- the approval threshold itself, probed at its exact boundary **from the TypeScript constant**, so the constant and the constraint cannot drift apart
 
 `TRUNCATE` gets its own statement trigger because it bypasses row-level
 triggers — the gap most people leave open.
@@ -179,7 +198,10 @@ db/migrate.ts      checksums applied migrations to catch edits to applied files
 src/lib/money.ts   Cents (bigint) | Units (Decimal 6dp) | the rounding rule
 src/lib/ledger/    post · read · lots · trades · invariants
 src/lib/returns.ts time-weighted return, pure and testable
-src/lib/providers/ registry (live/simulated + kill switch) · alpaca
+src/lib/performance.ts  the daily series that feeds it
+src/lib/corporate-actions.ts  splits: apply, and withdraw
+src/lib/approvals.ts    maker-checker, threshold, execution
+src/lib/providers/ registry (live/simulated/blocked + kill switch) · alpaca
 src/app/           the deployed UI
 ```
 
@@ -209,7 +231,24 @@ npm run dev                    # development server
 ```
 
 Every key the system needs is documented in
-[`.env.example`](.env.example). All credentials are sandbox/test-mode only.
+[`.env.example`](.env.example), verified against `grep -r process.env` so it
+cannot drift from what the code reads. All credentials are sandbox/test-mode only.
+
+Useful while demonstrating it:
+
+```bash
+npm run demo-ready     # who can deposit right now, and why not
+npm run browser-path   # the loop through the real HTTP routes, on the deployed app
+npm run evidence       # what the PROVIDERS say exists, without reading our database
+npm run split-test     # a 2-for-1 split, measured either side, rolled back
+npm run happy-path     # the whole core loop for a brand-new customer
+```
+
+`npm run demo-ready` exists because of a limit that shapes every demo: Alpaca
+allows **one ACH transfer per account per trading day**, and a
+`SENT_TO_CLEARING` transfer cannot be cancelled. A customer who has deposited
+today cannot deposit again today. It asks Alpaca directly rather than inferring
+from our own records.
 
 ---
 
@@ -222,23 +261,25 @@ Kept current rather than aspirational. The same table is rendered on the
 
 | | Proof you can run |
 |---|---|
-| Multi-commodity double-entry ledger, bitemporal, append-only | `npm run verify` — 20/20 |
-| Money primitives, deterministic penny | `npm test` — 15 tests |
-| Tax lots, FIFO, realised gain, basis-drift proof | `npm test` — 11 tests |
-| Time-weighted return, flows structurally excluded | `npm test` — 13 tests |
-| Market calendar, T+1 settlement across holidays | `npm test` — 17 tests |
+| Multi-commodity double-entry ledger, bitemporal, append-only | `npm run verify` — 29/29 |
+| Money primitives, deterministic penny | `npm test` — 78 tests in total |
+| Tax lots, FIFO, realised gain, basis-drift proof | `npm test` |
+| Time-weighted return, flows structurally excluded | `npm test` — 10 tests pin the flow rule alone |
+| Market calendar, T+1 settlement across holidays | `npm test` |
 | Webhooks: signed, idempotent, replay-proof | `npm run replay-test` — 6/6 |
 | Event bridge — 3 Alpaca SSE streams, **no polling** | `npm run bridge` |
 | KYC onboarding — real Persona inquiry + webhooks | `npx tsx scripts/smoke-kyc.ts` — approved **and** declined |
 | Open banking — Plaid Link, owner check, ACH deposit | `npx tsx scripts/smoke-funding.ts` |
-| Daily valuation with stale-price handling | `npm run value` — 88 runs |
+| Daily valuation with stale-price handling | `npm run value` |
 | Custodian simulator + **classified** reconciliation | `npm run recon` / `--plant` |
 | Restatement — as-published vs as-corrected | `npm run restate` — 9/9 |
-| Auth, customer portfolio, ops console | `npx tsx scripts/smoke-ui.ts` — 22/22 |
+| Auth, customer portfolio, ops console | `npx tsx scripts/smoke-ui.ts` — 23/23 |
 | Seed from zero | `npm run seed -- --reset` |
 | MCP agent surface — 3 read tools, 1 write tool | `npm run mcp` (stdio) · `npm run agent-demo` — 14/14 |
 | Maker-checker on money-out, with execution | `npm run agent-demo` |
-| **The whole core loop, one command** | **`npm run happy-path` — 14/14** |
+| **The whole core loop, one command** | **`npm run happy-path`** — onboard, KYC, link, deposit, refusal, value, reconcile |
+| The core loop **through the HTTP routes a reviewer clicks** | `npm run browser-path` — 12/12 |
+| Corporate actions — a 2-for-1 split that moves nothing | `npm run split-test` — 16/16, rolls back unless given `--commit` |
 
 **Blocked (not by us)**
 
@@ -248,6 +289,13 @@ Kept current rather than aspirational. The same table is rendered on the
   exposed to journal from), and market orders fill in market hours. When funds
   land, the bridge books them and the fill path runs unchanged — it is already
   built and replay-tested.
+- **An outgoing ACH.** Withdrawals are approved, executed and booked, and the
+  transfer is genuinely attempted at Alpaca every time. Alpaca refuses the
+  **direction** for these Broker sandbox credentials — established by test, not
+  assumed: an unknown relationship id returns the same `403`, while INCOMING on
+  the same account answers with a specific business error. So the money moves on
+  our books and not on the rail, and the entry says exactly that rather than
+  implying an ACH that does not exist.
 
 **Not yet built**
 
@@ -320,11 +368,13 @@ Sepolia, ledgered identically to ACH.
 
 ## Honest notes
 
-- **Sandbox ACH is slow.** Alpaca's sandbox takes well over ten minutes to settle
-  a deposit, so a live demo cannot fund an account from zero within it. Demo
-  accounts are seeded pre-funded; the demo shows a deposit being *initiated* and
-  the in-flight state, which is modelled as a first-class ledger position rather
-  than hidden behind a spinner.
+- **Sandbox ACH settles on trading days, not on a timer.** A deposit initiated
+  at a weekend stays in flight until the market reopens, so a live demo cannot
+  fund an account from zero and watch it clear. The in-flight state is modelled
+  as a first-class ledger position rather than hidden behind a spinner, and the
+  ops console can deliver the settlement notification the rail will eventually
+  send — labelled in the ledger itself as `deposit.settled.simulated`, source
+  `simulator:rail`, so the record never claims Alpaca said something it did not.
 - **Alpaca is asynchronous in three places** — account approval, ACH relationship
   approval, and transfer settlement. All three are states the product must model
   anyway, and the sandbox handed them over for free.

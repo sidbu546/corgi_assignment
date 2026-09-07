@@ -101,7 +101,12 @@ async function main() {
   const alex = await fetchAs('/portfolio', session('alex@demo.ledgerly.app'));
   check('page renders', !alex.startsWith('__STATUS_'));
   check('shows the rejection', /Identity verification was not successful/.test(alex));
-  check('shows the reason', /could not be matched/.test(alex));
+  // The reason text comes from PERSONA, not from us, so asserting one exact
+  // sentence tests the seed rather than the behaviour: a hand-seeded rejection
+  // says "could not be matched", a real declined inquiry says "Persona
+  // reported inquiry.declined". Either is a reason being shown, which is the
+  // requirement. This failed the moment a real decline replaced the seeded one.
+  check('shows the reason', /could not be matched|Persona reported/.test(alex));
 
   // --- ops ------------------------------------------------------------------
   console.log('\n4. Ops -> /ops\n');
