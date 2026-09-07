@@ -41,18 +41,22 @@ listed on that page.
 |---|---|---|---|
 | **Customer** | `dana@demo.ledgerly.app` | `demo-password` | Funded. Two deposits, a Growth model, a FIFO sell across two lots, dividends. |
 | Customer | `marcus@demo.ledgerly.app` | `demo-password` | Funded, Balanced model. |
-| Customer | `priya@demo.ledgerly.app` | `demo-password` | **KYC pending** — gated, cannot transact. |
-| Customer | `alex@demo.ledgerly.app` | `demo-password` | **KYC rejected** — gated, with Persona's reason shown. |
+| Customer | `priya@demo.ledgerly.app` | `demo-password` | Seeded as a **gated** customer — see the note below. |
+| Customer | `alex@demo.ledgerly.app` | `demo-password` | Seeded as a **gated** customer — see the note below. |
 | **Ops** | `ops@demo.ledgerly.app` | `ops-password` | Ops console. The *maker*. |
 | Ops | `approver@demo.ledgerly.app` | `ops-password` | Ops console. The *checker* — a different identity, because nobody approves their own action. |
 
 Two gated customers are seeded on purpose: the brief asks for pending and
 rejected to be visible, not just the happy path.
 
-**Those two states are live, not fixtures.** The KYC controls on `/portfolio`
-call *Persona's own* sandbox endpoints, so pressing them really does move a
-customer — which means a demo can leave Priya or Alex in a different state than
-this table describes. `npm run seed -- --reset` restores the lot. Anyone can
+**Which customer is in which KYC state is Persona's to say, not this file's.**
+The controls on `/portfolio` call *Persona's own* sandbox endpoints, so pressing
+them really does move a customer — and Persona's sandbox moves them unprompted
+too: it declined a customer eight seconds after we restored her. So this table
+deliberately does not name a state it cannot guarantee. The **sign-in page reads
+each customer's current status live** and renders it beside the credentials,
+using the same ordering the gate enforces, so what you see there is what the
+gate will do. `npm run seed -- --reset` restores the seeded lot. Anyone can
 also open a brand-new account at
 [`/signup`](https://corgi-assignment.vercel.app/signup) and walk the whole path
 from nothing, which is the better demo: a new customer gets a new brokerage
@@ -148,6 +152,12 @@ three questions people routinely conflate:
 The third is what a regulator asks about, and it's a query parameter here rather
 than a subsystem. Corrections are **reversal + re-book**, never edits.
 
+All three are on one screen — [`/asof`](https://corgi-assignment.vercel.app/asof)
+— side by side for the same customer, with the late-arriving facts that separate
+the last two listed underneath. A claim like "we are bitemporal" that can only be
+checked by reading a type signature is a claim a reviewer should refuse to take
+on trust.
+
 ---
 
 ## Domain positions taken
@@ -186,6 +196,14 @@ What it proves, by attempting each and requiring refusal:
 - self-approval, self-**execution**, and approving what you asked an agent to raise — all `CHECK` constraints, not code paths
 - the approval threshold itself, probed at its exact boundary **from the TypeScript constant**, so the constant and the constraint cannot drift apart
 
+And one that proves an ordering rather than a refusal: a Persona decline
+delivered **before its own creation event** must still gate the customer. Real
+out-of-order delivery made the newest-by-arrival event `pending`, softening a
+hard block to a soft one — a KYC gate failing *open*. The probe replays that
+delivery, runs `kycStatus()`'s query character for character, and also asserts
+that ordering by arrival gives the wrong answer, so the check cannot pass for
+free.
+
 `TRUNCATE` gets its own statement trigger because it bypasses row-level
 triggers — the gap most people leave open.
 
@@ -194,15 +212,21 @@ triggers — the gap most people leave open.
 ## Architecture
 
 ```
-db/migrations/     hand-written SQL. The ledger is ~250 lines I can read aloud.
+db/migrations/     12 hand-written files, ~1,350 lines. The ledger core is ~250
+                   lines I can read aloud; the rest is domain and constraints.
 db/migrate.ts      checksums applied migrations to catch edits to applied files
 src/lib/money.ts   Cents (bigint) | Units (Decimal 6dp) | the rounding rule
-src/lib/ledger/    post · read · lots · trades · invariants
+src/lib/ledger/    post · read (the bitemporal coordinate) · lots · trades · invariants
 src/lib/returns.ts time-weighted return, pure and testable
 src/lib/performance.ts  the daily series that feeds it
+src/lib/valuation.ts    daily book value, with stale-price handling
+src/lib/restatement.ts  as-published vs as-corrected, from one function
+src/lib/recon.ts        break classification and aging
+src/lib/calendar.ts     market days, T+1, and the New York day boundary
 src/lib/corporate-actions.ts  splits: apply, and withdraw
 src/lib/approvals.ts    maker-checker, threshold, execution
-src/lib/providers/ registry (live/simulated/blocked + kill switch) · alpaca
+src/lib/providers/ registry (live/simulated/blocked + kill switch) · alpaca ·
+                   plaid · persona · custodian · marketdata · brokerage
 src/app/           the deployed UI
 ```
 
@@ -276,7 +300,7 @@ Kept current rather than aspirational. The same table is rendered on the
 | Daily valuation with stale-price handling | `npm run value` |
 | Custodian simulator + **classified** reconciliation | `npm run recon` / `--plant` |
 | Restatement — as-published vs as-corrected | `npm run restate` — 9/9 |
-| Auth, customer portfolio, ops console | `npx tsx scripts/smoke-ui.ts` — 23/23 |
+| Auth, customer portfolio, ops console | `npx tsx scripts/smoke-ui.ts` — 26/26, against the **deployed** app |
 | Seed from zero | `npm run seed -- --reset` |
 | MCP agent surface — 3 read tools, 1 write tool | `npm run mcp` (stdio) · `npm run agent-demo` — 14/14 |
 | Maker-checker on money-out, with execution | `npm run agent-demo` |
