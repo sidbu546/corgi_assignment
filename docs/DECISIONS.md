@@ -2081,7 +2081,7 @@ its words on the parts that need a human to explain them.
 
 ---
 
-## 2026-09-07T09:40 EDT — Reframed the gaps as work, and separated the calendar from both
+## 2026-09-07T09:36 EDT — Reframed the gaps as work, and separated the calendar from both
 
 Two corrections to the cut list I rewrote ten minutes ago.
 
