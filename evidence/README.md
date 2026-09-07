@@ -32,7 +32,7 @@ its mode, probed with a real HTTP round trip on each page load. A slot cannot
 silently become a simulator without the badge changing, because the badge and
 the behaviour read from the same declaration.
 
-## Reproducing it rather than trusting it
+## Reproducing it 
 
 ```
 npm run evidence
