@@ -292,7 +292,7 @@ Each row names a command you can run rather than a claim you have to take.
 | Out-of-order provider delivery cannot fail a KYC gate open | `npm run verify` — replays the decline that arrived before its own creation |
 | Money primitives, deterministic penny | `npm test` — 78 tests in total |
 | Tax lots, FIFO, realised gain, basis-drift proof | `npm test` |
-| Time-weighted return, flows structurally excluded | `npm test` — 10 tests pin the flow rule alone |
+| Time-weighted return, flows structurally excluded | `npm test` — 11 tests pin the flow rule alone |
 | Market calendar, T+1 settlement across holidays | `npm test` |
 | Webhooks: signed, idempotent, replay-proof | `npm run replay-test` — 6/6 |
 | Event bridge — 3 Alpaca SSE streams, **no polling** | `npm run bridge` |
