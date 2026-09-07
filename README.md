@@ -280,8 +280,8 @@ from our own records.
 
 ## Status — what is built, what is not
 
-Kept current rather than aspirational. The same table is rendered on the
-[deployed overview page](https://corgi-assignment.vercel.app).
+Kept current rather than aspirational: anything not listed here is not done.
+Each row names a command you can run rather than a claim you have to take.
 
 **Built**
 
