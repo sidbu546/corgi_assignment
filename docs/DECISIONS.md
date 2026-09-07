@@ -2040,7 +2040,7 @@ ones. Everything else on that page I would defend as written.
 
 ---
 
-## 2026-09-07T09:34 EDT — A cut list that only lists what you chose not to build is marketing
+## 2026-09-07T09:28 EDT — A cut list that only lists what you chose not to build is marketing
 
 Audited the cut list the way I audited the counts. It was credible as far as it
 went, and it went only one direction: five things I decided not to build, each
