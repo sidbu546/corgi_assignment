@@ -4,11 +4,15 @@ Append-only. Newest at the bottom. Every entry is written when the decision is
 made, not reconstructed afterwards — the git history should corroborate the
 timestamps.
 
+All times are **EDT** (UTC−4), which is the offset in force for every date in
+this log. Written in local time because that is the clock the work was done on;
+git records UTC, so subtract four hours to line an entry up with its commits.
+
 Format: what I decided, why, what I assumed, what it costs me.
 
 ---
 
-## 2026-09-05T16:48Z — Track 2, investment app
+## 2026-09-05T12:48 EDT — Track 2, investment app
 
 **Decided.** Track 2 over Track 1.
 
@@ -28,7 +32,7 @@ interesting core.
 
 ---
 
-## 2026-09-05T16:52Z — Stack
+## 2026-09-05T12:52 EDT — Stack
 
 **Decided.** Next.js 15 (App Router, TypeScript) on Vercel, Postgres on Neon,
 `pg` with hand-written SQL for everything that touches money, Drizzle only for
@@ -48,7 +52,7 @@ ledger is ~200 lines of SQL I wrote and can defend.
 
 ---
 
-## 2026-09-05T16:55Z — The ledger is multi-commodity, not two ledgers
+## 2026-09-05T12:55 EDT — The ledger is multi-commodity, not two ledgers
 
 **Decided.** One journal. Every line carries a `commodity` (`'USD'` or a ticker)
 and exactly one of `amount_cents bigint` or `units numeric(28,6)`, enforced by a
@@ -79,7 +83,7 @@ else negative) in one place and it is relied on everywhere.
 
 ---
 
-## 2026-09-05T16:58Z — Unrealised gain is not a ledger entry
+## 2026-09-05T12:58 EDT — Unrealised gain is not a ledger entry
 
 **Decided.** Positions are carried in two accounts: `assets:positions` (units
 only) and `assets:positions:cost` (cents only). Market value is **never**
@@ -97,7 +101,7 @@ is exactly one place it can come from.
 
 ---
 
-## 2026-09-05T17:01Z — Commissions capitalise into cost basis
+## 2026-09-05T13:01 EDT — Commissions capitalise into cost basis
 
 **Decided.** Trade commissions increase the cost basis of the lot rather than
 being expensed to `expenses:fees`.
@@ -110,7 +114,7 @@ genuinely expenses.
 
 ---
 
-## 2026-09-05T17:04Z — Cash is three buckets, not one
+## 2026-09-05T13:04 EDT — Cash is three buckets, not one
 
 **Decided.** `assets:cash:settled`, `assets:cash:unsettled_proceeds`,
 `assets:cash:pending_deposit`.
@@ -129,7 +133,7 @@ the reversal has an account to come out of.
 
 ---
 
-## 2026-09-05T17:07Z — Append-only is enforced by Postgres, twice
+## 2026-09-05T13:07 EDT — Append-only is enforced by Postgres, twice
 
 **Decided.** `BEFORE UPDATE OR DELETE` triggers that `RAISE EXCEPTION` on every
 money table, plus `BEFORE TRUNCATE` statement triggers, plus (once the app role
@@ -149,7 +153,7 @@ live and letting Postgres refuse, rather than asserting it in a README.
 
 ---
 
-## 2026-09-05T17:10Z — No status columns, no positions table
+## 2026-09-05T13:10 EDT — No status columns, no positions table
 
 **Decided.** Orders have no `status` column. There is no `positions` table and no
 `customers.balance`. Status is the latest `order_events` row; positions and
@@ -167,7 +171,7 @@ that are *derived*, clearly labelled as caches, and rebuildable from the journal
 
 ---
 
-## 2026-09-05T17:13Z — Prices are superseded, never corrected in place
+## 2026-09-05T13:13 EDT — Prices are superseded, never corrected in place
 
 **Decided.** A corrected closing price inserts a **new** `prices` row for the
 same `(symbol, price_date)` with a later `recorded_at` and a `supersedes_id`
@@ -186,9 +190,9 @@ returns follow the same pattern: a restated day inserts a new run for the same
 
 ---
 
-## 2026-09-05T17:34Z — Correction: dropped Drizzle entirely
+## 2026-09-05T13:34 EDT — Correction: dropped Drizzle entirely
 
-**Corrects the 16:52Z stack entry**, which said Drizzle would be kept "for
+**Corrects the 12:52 EDT stack entry**, which said Drizzle would be kept "for
 convenience reads elsewhere". It has been removed from the dependency tree.
 
 **Why.** Once the ledger was written in raw SQL, the only thing Drizzle was
@@ -204,7 +208,7 @@ never an edit.
 
 ---
 
-## 2026-09-05T18:20Z — Alpaca Broker API sandbox, not Trading API paper
+## 2026-09-05T14:20 EDT — Alpaca Broker API sandbox, not Trading API paper
 
 **Decided.** Broker API sandbox (`broker-api.sandbox.alpaca.markets`) as the
 brokerage/custody integration, with Legacy key/secret credentials over HTTP
@@ -238,7 +242,7 @@ pretending each customer has their own.
 
 ---
 
-## 2026-09-05T18:26Z — All three mandatory live integrations verified before building on them
+## 2026-09-05T14:26 EDT — All three mandatory live integrations verified before building on them
 
 **Decided.** Before writing a line of provider client code, hit each sandbox
 with a real request and confirm a 200.
@@ -259,7 +263,7 @@ answers.
 
 ---
 
-## 2026-09-05T18:31Z — The invariants are proven, not asserted
+## 2026-09-05T14:31 EDT — The invariants are proven, not asserted
 
 **Decided.** `npm run verify` attempts every forbidden operation against the
 real database and requires Postgres to refuse each one. 20 checks: unbalanced
@@ -285,7 +289,7 @@ design makes easy to write and hard to notice.
 
 ---
 
-## 2026-09-05T18:45Z — Deployed early, before there was anything worth deploying
+## 2026-09-05T14:45 EDT — Deployed early, before there was anything worth deploying
 
 **Decided.** Get the public URL live at hour two with nothing but the scaffold on
 it, rather than at hour thirty with a finished app.
@@ -310,7 +314,7 @@ much worse to discover late:
 
 ---
 
-## 2026-09-05T18:52Z — Alpaca sandbox is asynchronous in three places, and that is useful
+## 2026-09-05T14:52 EDT — Alpaca sandbox is asynchronous in three places, and that is useful
 
 **Observed, not decided.** Running the brokerage rail end to end for real
 surfaced three asynchronous steps that a mock would have hidden:
@@ -343,7 +347,7 @@ range.
 
 ---
 
-## 2026-09-05T19:20Z — The invariant suite is a page, not just a script
+## 2026-09-05T15:20 EDT — The invariant suite is a page, not just a script
 
 **Decided.** Extract the checks into `src/lib/ledger/invariants.ts` and run the
 identical code from two surfaces: `npm run verify` in the terminal, and
@@ -364,7 +368,7 @@ against Neon from Vercel on every page load.
 
 ---
 
-## 2026-09-05T19:24Z — Provider badges are rendered from the code's own declaration
+## 2026-09-05T15:24 EDT — Provider badges are rendered from the code's own declaration
 
 **Decided.** `/integrations` renders its live/simulated badges from
 `PROVIDER_SLOTS`, the same declaration the runtime clients read, and probes each
@@ -385,7 +389,7 @@ to be live but did not configure is not live.
 
 ---
 
-## 2026-09-05T20:05Z — Market data downgraded from live to simulated
+## 2026-09-05T16:05 EDT — Market data downgraded from live to simulated
 
 **Decided.** Market data is a SIMULATED slot. The registry, the README and the
 `/integrations` page all say so.
@@ -412,7 +416,7 @@ the stale-price path runs against real data rather than only in a unit test.
 
 ---
 
-## 2026-09-05T20:40Z — A bug I made three times, and the check that ends it
+## 2026-09-05T16:40 EDT — A bug I made three times, and the check that ends it
 
 **The bug.** In Postgres, `sum()` over a `bigint` column returns **numeric**,
 not bigint. Our type parser deliberately maps numeric to a JavaScript *string*
@@ -444,7 +448,7 @@ point, so the mapping is a stated dependency rather than a lucky import order.
 
 ---
 
-## 2026-09-05T20:44Z — now() is the transaction timestamp, not the wall clock
+## 2026-09-05T16:44 EDT — now() is the transaction timestamp, not the wall clock
 
 **Bug found by the seed.** Every customer's KYC status read as `not_started`
 even though the events said otherwise. Cause: `recorded_at DEFAULT now()`, and
@@ -463,7 +467,7 @@ where it belongs.
 
 ---
 
-## 2026-09-05T20:52Z — Alpaca sandbox ACH does not settle in a demo window
+## 2026-09-05T16:52 EDT — Alpaca sandbox ACH does not settle in a demo window
 
 **Measured, not assumed.** A background watcher polled a real sandbox ACH
 deposit every 60 seconds for **116 minutes**. It went `QUEUED` ->
@@ -486,7 +490,7 @@ buckets and not one.
 
 ---
 
-## 2026-09-05T20:56Z — Seed design: refuses rather than duplicates
+## 2026-09-05T16:56 EDT — Seed design: refuses rather than duplicates
 
 **Decided.** `npm run seed` refuses to run against a non-empty journal.
 `npm run seed -- --reset` DROPs the schema, re-migrates and repopulates.
@@ -515,7 +519,7 @@ integers with the dollar value in a comment beside each.
 
 ---
 
-## 2026-09-05T21:40Z — Webhooks: one pipeline, three transports, honestly labelled
+## 2026-09-05T17:40 EDT — Webhooks: one pipeline, three transports, honestly labelled
 
 **Decided.** Every inbound event — Persona's real webhooks, Plaid's real
 webhooks, and Alpaca's events — flows through one `receiveWebhook` pipeline with
@@ -551,7 +555,7 @@ keys and changes the bytes that were signed.
 
 ---
 
-## 2026-09-05T21:55Z — A vulnerability my own replay test found
+## 2026-09-05T17:55 EDT — A vulnerability my own replay test found
 
 **The bug.** `receiveWebhook` claimed the idempotency key BEFORE verifying the
 signature, and `webhook_deliveries` had a plain `UNIQUE (provider,
@@ -590,7 +594,7 @@ rejected, and every response a 200 so no provider retries into a wall.
 
 ---
 
-## 2026-09-05T22:30Z — Answering a fair challenge: the core loop was not in the deployment
+## 2026-09-05T18:30 EDT — Answering a fair challenge: the core loop was not in the deployment
 
 **Prompted by review**, and the criticism was correct. What was deployed was the
 foundation and the evidence layer — ledger, lots, returns maths, calendar,
@@ -617,7 +621,7 @@ undemonstrable at hour 20.
 
 ---
 
-## 2026-09-05T22:34Z — Alpaca sandbox will not fund an account today, and why that is not fixable
+## 2026-09-05T18:34 EDT — Alpaca sandbox will not fund an account today, and why that is not fixable
 
 **Established by exhaustion, not assumption.** A real order cannot be placed
 until the deposit settles, so I tried every funding route the sandbox exposes:
@@ -649,7 +653,7 @@ spinner.
 
 ---
 
-## 2026-09-05T22:40Z — Valuation is a snapshot, and re-running it is free
+## 2026-09-05T18:40 EDT — Valuation is a snapshot, and re-running it is free
 
 **Decided.** `runValuation` never overwrites. Valuing the same date twice
 creates a second run with a later `recorded_at`; the later one wins for "as
@@ -674,7 +678,7 @@ simulator withholds on purpose.
 
 ---
 
-## 2026-09-05T23:05Z — Open banking: Plaid verified end to end, one dashboard toggle outstanding
+## 2026-09-05T19:05 EDT — Open banking: Plaid verified end to end, one dashboard toggle outstanding
 
 **Built and proven against the real sandbox:** link token -> public token ->
 access token -> accounts + identity -> name match -> processor token.
@@ -716,7 +720,7 @@ minted and the ACH relationship cannot be created from Plaid.
 
 ---
 
-## 2026-09-06T00:15Z — The funding path, in the UI, on real rails
+## 2026-09-05T20:15 EDT — The funding path, in the UI, on real rails
 
 **Built:** `/fund` drives the whole money path through the deployed app —
 link a bank, deposit, invest — against two live provider sandboxes.
@@ -765,7 +769,7 @@ already exists and is already tested.
 
 ---
 
-## 2026-09-06T01:00Z — Reconciliation: classification is the product, detection is not
+## 2026-09-05T21:00 EDT — Reconciliation: classification is the product, detection is not
 
 **Decided.** Every break is classified, aged, and given an expected clear date
 where one exists. The screen sorts genuine breaks above actionable ones above
@@ -812,7 +816,7 @@ restatement.
 
 ---
 
-## 2026-09-06T01:35Z — Restatement, and a domain fact I got wrong first
+## 2026-09-05T21:35 EDT — Restatement, and a domain fact I got wrong first
 
 **Built.** A corrected close lands; every day from that date forward is
 revalued; affected published returns are restated. Three append-only
@@ -860,7 +864,7 @@ byte-for-byte untouched; and the superseded price row still exists.
 
 ---
 
-## 2026-09-06T01:40Z — Revalue forward, not just the corrected day
+## 2026-09-05T21:40 EDT — Revalue forward, not just the corrected day
 
 **Decided.** `applyCorrectedClose` revalues every date from the corrected date
 to today, not only the corrected date.
@@ -878,7 +882,7 @@ fabricate history rather than correct it.
 
 ---
 
-## 2026-09-06T02:10Z — Polling removed: the bridge consumes three event streams
+## 2026-09-05T22:10 EDT — Polling removed: the bridge consumes three event streams
 
 **Prompted by a good question:** "is the watcher polling?" It was — a throwaway
 diagnostic in /tmp, never tracked by git, whose only job was to measure how long
@@ -935,7 +939,7 @@ that right.
 
 ---
 
-## 2026-09-06T02:55Z — Persona webhooks live, and a real out-of-order bug they exposed
+## 2026-09-05T22:55 EDT — Persona webhooks live, and a real out-of-order bug they exposed
 
 **Live.** Persona now delivers signed webhooks to the deployed URL, and both
 paths are exercised by `scripts/smoke-kyc.ts`:
@@ -981,7 +985,7 @@ in that order, and the test printed the history.
 
 ---
 
-## 2026-09-06T03:20Z — One command that walks the whole loop
+## 2026-09-05T23:20 EDT — One command that walks the whole loop
 
 **Built.** `npm run happy-path` creates a brand-new customer and drives the
 entire core loop against three live provider sandboxes, asserting at every step.
@@ -1021,7 +1025,7 @@ did.
 
 ---
 
-## 2026-09-06T04:05Z — The restatement moved out of the terminal, and KYC into the UI
+## 2026-09-06T00:05 EDT — The restatement moved out of the terminal, and KYC into the UI
 
 **Why.** Asked whether the full loop was demoable end to end, the honest answer
 was no: the restatement — the highest-signal thing in this track — existed only
@@ -1062,7 +1066,7 @@ A gate that has only ever been seen to open is not a gate.
 
 ---
 
-## 2026-09-06T05:00Z — A second execution venue, and why it is labelled OMNIBUS
+## 2026-09-06T01:00 EDT — A second execution venue, and why it is labelled OMNIBUS
 
 **Decided.** Added Alpaca's Trading API **paper** account as a second live
 execution venue alongside Broker API, selectable per customer and recorded per
@@ -1117,7 +1121,7 @@ is precisely the long-weekend case the calendar tests already cover.
 
 ---
 
-## 2026-09-06T06:00Z — The agent surface, and the boundary that makes it safe
+## 2026-09-06T02:00 EDT — The agent surface, and the boundary that makes it safe
 
 **Built.** A working MCP server over stdio (`npm run mcp`) with three read tools
 — `get_portfolio`, `explain_balance`, `list_reconciliation_breaks` — and one
@@ -1165,7 +1169,7 @@ punishes anyone who forgets the transaction with a confusing error.
 
 ---
 
-## 2026-09-06T07:00Z — A breaks screen that was hiding breaks
+## 2026-09-06T03:00 EDT — A breaks screen that was hiding breaks
 
 **Found by a reviewer**, not by me, and it is the worst class of bug this
 project could have shipped.
@@ -1194,7 +1198,7 @@ behind a lossy query is indistinguishable, from the outside, from broken logic.
 
 ---
 
-## 2026-09-06T07:10Z — Restatements were leading with the case that does not move
+## 2026-09-06T03:10 EDT — Restatements were leading with the case that does not move
 
 **Also found by looking at the screen** rather than the test output.
 
@@ -1214,7 +1218,7 @@ worth showing, just not first.
 
 ---
 
-## 2026-09-06T08:00Z — I got the same query wrong twice, so I extracted and tested it
+## 2026-09-06T04:00 EDT — I got the same query wrong twice, so I extracted and tested it
 
 **The sequence, because the pattern matters more than either bug.**
 
@@ -1259,7 +1263,7 @@ to have to explain mid-demo. Renamed to A and B.
 
 ---
 
-## 2026-09-06T09:00Z — /flow: the six steps as one story
+## 2026-09-06T05:00 EDT — /flow: the six steps as one story
 
 **Prompted by "can I see this on the website fully".** The honest answer was:
 every piece existed, spread across six pages, and no page told the story. A
@@ -1293,7 +1297,7 @@ either end.
 
 ---
 
-## 2026-09-06T10:00Z — You cannot see money move if nothing ever settles
+## 2026-09-06T06:00 EDT — You cannot see money move if nothing ever settles
 
 **The criticism, and it was right:** the deployed site showed *records*, not
 *movement*. Every screen was a report of state. Nothing let you watch a number
@@ -1342,7 +1346,7 @@ It now computes the delta and describes what actually happened, including
 
 ---
 
-## 2026-09-06T11:00Z — Making the demo repeatable, and the divergence it surfaced
+## 2026-09-06T07:00 EDT — Making the demo repeatable, and the divergence it surfaced
 
 **Two problems with the first version, both worth recording.**
 
@@ -1380,7 +1384,7 @@ agent-proposed, human-approved withdrawal.
 
 ---
 
-## 2026-09-06T12:00Z — I put a lie in the ledger, and corrected it the way the system prescribes
+## 2026-09-06T08:00 EDT — I put a lie in the ledger, and corrected it the way the system prescribes
 
 **Challenged on whether the simulated settlement notification risked the
 "simulated integration presented as live" automatic fail.** The labelling was
@@ -1421,3 +1425,336 @@ claims a third party said something they did not.
 **Verified after:** 0 mis-attributed settlements remain, 64 tests green, and
 25/25 invariants hold with the trial balance netting to zero in all six
 commodities.
+
+---
+
+## A note on the entries below
+
+Written at **2026-09-07T01:35 EDT**, from the commit record, covering the
+sixteen hours from the return-figure fix to the sign-in page. Those decisions
+went into git with full commit messages but not into this file, which is a lapse
+against my own rule at the top of this log. Labelling it is better than
+back-dating entries to pretend otherwise.
+
+The times below are the commit times, so `git log` corroborates them, and the
+commit messages are the contemporaneous record. What follows is the decision
+layer on top of them: what I chose, and what I got wrong first.
+
+---
+
+## 2026-09-06T08:18 EDT — The headline return was wrong, and had been all along
+
+**Found while answering a question about a screenshot,** not by a test.
+Dana's portfolio read **+153.80%** since inception with net deposits of
+**−$1,700**. The end value was right; only the return was wrong.
+
+`performance.ts` identified an external flow as a line in `assets:cash:settled`
+on an entry that *also* touched `equity:external:bank`. But a deposit settling
+moves `pending -> settled` and faces **no bank account at all**. So deposits were
+never counted as flows, and cash arriving in the portfolio read as investment
+performance. The −$1,700 was only the withdrawals.
+
+**Decided.** The boundary is drawn by what portfolio value *measures*, not by
+what faces the bank. Valuation excludes in-flight cash, so `pending_deposit` is
+outside the measured portfolio too, and the `pending -> settled` conversion **is**
+the flow. Recognising it earlier, at initiation, is the opposite error: the flow
+lands on a day the measured value does not move.
+
+**Cost.** The rule now lives in one pure function decided per entry, and the SQL
+only pre-filters. Ten tests pin it, including the dividend that must stay return
+and the house line that marks a withdrawal as a flow while contributing nothing
+to its amount. Dana reads **+7.25%**, net flow **$58,300** — which reconciles by
+hand.
+
+**What it cost me to learn.** The arithmetic had good tests from the start.
+What had no test was *which ledger movements get called a flow*, and that is
+where the bug was. Testing a pure function is not the same as testing its input.
+
+---
+
+## 2026-09-06T09:01 EDT — A restatement must not misattribute its own cause
+
+`applyCorrectedClose` told every restated figure that the price correction was
+the reason. Not always true: a figure published before the flow fix moves even
+when the corrected price leaves the end value untouched — and the screen then
+asserted a cause the numbers on the same row contradicted. End value identical,
+return down 41 points.
+
+**Decided.** Build the reason from the observed outcome. When the return moved
+but the end value did not, say so and name the real cause.
+
+The figures are computed **before** publishing rather than after, because
+`published_returns` is append-only — my first attempt wrote an `UPDATE` to patch
+the wording afterwards, which the table's own trigger would have rejected. There
+is no second chance to correct a published reason. That is the point of the
+table.
+
+---
+
+## 2026-09-06T10:53 EDT — Reconciliation is an operation, so it must be operable
+
+Valuation runs on every portfolio load and restatement had buttons. Recon could
+only be run from a terminal — so the one step the brief calls a *daily
+operation* was the one step nobody could perform. A screen showing rows someone
+else produced overnight reads as a report, not as ops.
+
+**Decided.** Run it from `/recon`, in both modes. Clean is the default and the
+important one: a reconciliation that cries wolf on a quiet morning is ignored on
+the loud one, so watching it find nothing is the point, not an anticlimax.
+
+**Then the clean run could not clear the board.** It reported `breaksFound: 0`
+while the table still showed two criticals. `recon_runs` never recorded which
+customer it was for, so the page inferred ownership from the breaks a run
+produced — and a run that produces none is invisible under that rule.
+
+This is the **third** time this screen's selection was wrong, and the first two
+failed the other way: `DISTINCT ON (as_of_date)` hid every customer but one,
+`DISTINCT ON (customer_id, as_of_date)` hid every break but one. Those lost
+breaks that existed. This one kept showing breaks that did not. All three turn
+on the same distinction — **runs must be an independent input, not derived from
+breaks** — which the test now takes as a separate argument.
+
+---
+
+## 2026-09-06T11:34 EDT — The corrected close was compounding
+
+Pressing "apply the corrected close" ten times walked VOO's 31 August close from
+56,405.97 to **39,500.10** cents — a 30% drift — and wrote eleven versions
+claiming the custodian had corrected the same close ten separate times. Every
+row was individually honest; the sequence described something that never
+happened.
+
+**Decided.** Anchor the correction to the **original** close, not the current
+one. "Wrong by −3.5%" means wrong relative to what was originally published.
+Anchored, the operation is idempotent in value: press it once or twenty times
+and the corrected close is the same number. A press that would write an
+identical value now writes nothing and says why.
+
+Publishing then had to restore the original close first, or the scenario became
+a no-op — publish recorded the already-corrected number and the correction that
+followed changed nothing. That restore is written into the price row as a
+**scenario reset**, never as a custodian correction.
+
+---
+
+## 2026-09-06T12:05 EDT — Configuration is documentation, and it had drifted
+
+`.env.example` claimed to list every key the system needs. It was missing six,
+including the entire paper-trading block — so a fresh clone could open accounts
+and move cash but not place a single order, and the failure surfaced as
+"insufficient buying power" rather than "you forgot a key". That sends you
+debugging funding instead of configuration.
+
+**Decided.** Verify the template against `grep -r process.env` over `src/`,
+`scripts/` and `db/`, which is the only definition of "needs" that cannot drift.
+Also state that `PLAID_WEBHOOK_SECRET` is **unused** — Plaid signs with an ES256
+JWT verified against its public key — so anyone holding one knows it does
+nothing.
+
+---
+
+## 2026-09-06T14:01 EDT — I built the approval threshold, then withdrew it
+
+`APPROVAL_THRESHOLD_CENTS` was referenced exactly once in the codebase: to
+render a sentence. Nothing enforced it and nothing relaxed it — every withdrawal
+required a distinct approver regardless of size. Stricter than advertised is a
+safe failure, but a stated control that is not the implemented control stops
+being safe the moment somebody relies on the statement.
+
+**First decision.** Make it real: a CHECK constraint, one pair of eyes at or
+under $1,000, two above, with four invariants probing the boundary **from the
+TypeScript constant** so the two cannot drift.
+
+**Then I withdrew it.** It produced a queue with two kinds of card behaving
+differently for no reason a reviewer could see, and it let the maker execute
+their own money-out. The simpler rule is also the stronger one:
+
+> the **maker** raises it — human or agent, any amount — and a **different**
+> person approves it *and* executes it.
+
+Money-out enters the queue only above the threshold, so there is no second band
+to explain.
+
+**And the hole that opened.** The ops console now asks an *agent* to raise the
+request, which is the right shape — an agent proposes, a human decides — but on
+its own it is worse than the problem it solves. `requested_by` becomes an agent,
+the distinct-identity constraint is satisfied, and the person who typed the
+amount can approve and execute their own request with an agent's name standing
+in for the second pair of eyes. Maker-checker would be decorative *and would
+look enforced*.
+
+So the console records `triggeredBy`, and that person is barred from deciding —
+in the database, reading the JSONB payload, not in the route.
+
+**Cost.** Three migrations to arrive somewhere simpler than where I started. I
+would rather that than ship a branch I could not justify.
+
+---
+
+## 2026-09-06T16:06 EDT — The withdrawal rail: three labels before the true one
+
+Executing a withdrawal wrote the journal entry and stopped. Nothing ever asked
+Alpaca to move anything, so the ledger said money went to the bank while no rail
+had been asked. Undeclared.
+
+**First label: SIMULATED.** Honest but weak — a label where there could be
+evidence.
+
+**Then attempt it for real** and record whatever the rail answers: a transfer id
+when it accepts, the refusal verbatim when it does not. It refuses.
+
+**Then I explained the refusal wrong.** I attributed the 403 to a zero balance —
+the deposit is unsettled, so there is nothing to send — and put that in the
+ledger narrative, the registry note and the probe as though established. It was
+an inference. Alpaca only said `forbidden`.
+
+**Tested it instead**, after being asked why a withdrawal rail depends on a
+deposit:
+
+```
+OUTGOING, valid relationship, $1   -> 403 forbidden
+OUTGOING, UNKNOWN relationship, $1 -> 403 forbidden   <- same
+INCOMING, valid relationship, $1   -> 422 "1 per trading day in each direction"
+```
+
+The middle line settles it: an unknown relationship gets the identical 403, so
+Alpaca rejects the **direction** before reading the request. Outgoing ACH is
+simply not permitted for these Broker sandbox credentials, and settling the
+deposit will not change it — which also retracted my claim that the row would
+turn green on Tuesday.
+
+**Final label: a third mode, `blocked`,** rendered `live · refused` in its own
+colour. "Live" would claim the money reaches the bank; "simulated" would claim
+we invented a transfer. Neither is true.
+
+---
+
+## 2026-09-06T18:43 EDT — A 2-for-1 split, because it must change nothing
+
+Not in the brief, chosen because it is the sharpest test available. A model can
+get a price move roughly right by accident. A split has to be **exactly inert**:
+units double, price halves, and market value, cost basis, portfolio total and
+the time-weighted return all stand still.
+
+Three ways to fail it, and the implementation avoids each:
+
+- the **cost account is not touched** — the entry has no USD line at all, so
+  total basis cannot drift and per-unit basis halves as arithmetic
+- the new units face **`equity:external:market`**, not the bank, or they would
+  classify as an external flow and the return would jump
+- **tax lots are closed and replaced**, never mutated. `tax_lots` is append-only
+  and its schema anticipated this in the first migration: *"splits do not mutate
+  a lot: they close it and open a replacement"*
+
+That last one needed a fix in `loadLots`, which did not exclude replaced lots —
+an original and its replacement would both have read as open, doubling the
+position in the lot view while the ledger said otherwise, and FIFO would then
+consume a lot that no longer exists.
+
+**Verified on live data:** Dana 36.682363 → 73.364726 units, value $20,383.34
+either side, TWR `0.072579512390` either side — compared at twelve decimal
+places, because two different returns can print identically at two.
+
+A split can also be **withdrawn**, since `corporate_actions` is append-only: the
+entry is reversed, the price restored, the replacement lots themselves replaced,
+and a reversing announcement row recorded. Skipping that last part would leave
+the one-split-per-day guard refusing a symbol whose split no longer existed
+anywhere else.
+
+---
+
+## 2026-09-06T19:34 EDT — Unlinking a bank, wrong three times
+
+Once a customer was linked there was no way to undo it, so the first step of the
+money path could only be described.
+
+1. **One-sided.** Deactivated our row and stopped. Alpaca permits exactly one
+   active ACH relationship per account, so relinking failed with a 409 the
+   customer could do nothing about.
+2. **Our rows only.** Deleting the relationships named on our *active* rows still
+   could not clear an orphan — one left alive at Alpaca whose row we had already
+   deactivated is invisible to any query over `bank_links`, and it is exactly the
+   one that blocks relinking.
+3. **Fail-open.** I wrapped the broker enumeration in `.catch(() => [])`, so a
+   failed call would report a clean unlink while leaving the orphan in place.
+   The same pattern I had removed from `demo-ready` and the integrations probe,
+   written again by me.
+
+**The lesson, which this system exists to enforce:** our record of a provider's
+state is not the provider's state.
+
+---
+
+## 2026-09-06T21:58 EDT — Market dates were compared in UTC
+
+Clicking "good funds" settled a deposit and the portfolio did not move. The
+ledger was right — $56,124.00 settled — and the valuation could not see it, so
+the screen showed the pre-deposit figure with nothing obviously broken.
+
+```sql
+AND e.effective_at < ($1::date + 1)
+```
+
+looks right and is wrong. It compares a `timestamptz` against midnight in the
+**session** timezone, which is UTC, while a `MarketDate` is a New York calendar
+day. An entry booked at 21:52 New York carries an `effective_at` of 01:52 UTC
+the *next* date and falls outside its own day. **Everything booked between 20:00
+and 23:59 New York was invisible to that day's valuation** — a four-hour blind
+spot, every evening, and the demo is recorded in the evening.
+
+Nine occurrences across valuation, performance, corporate actions and the
+custodian file, now behind one helper defined once with the reasoning attached.
+
+**What made it survivable:** every figure is folded from `journal_lines` on
+demand, so the fix was a query change and no stored number needed repairing.
+Dana's total went from $62,173.67 to $87,173.67 the moment the bound was right.
+A system with a `balance` column would have needed a backfill and a decision
+about which historical figures to trust.
+
+---
+
+## 2026-09-06T22:24 EDT — The README was stale, and the tests were asserting fixtures
+
+Every number in the README was wrong: 20 invariants and 39 tests against an
+actual 29 and 78, and 22/22 for a smoke test that was 23 and **failing**.
+
+Every count in a README is a claim a reviewer can check in one command, so a
+stale one is worse than no count at all — it is the cheapest possible way to
+look careless about numbers in a project whose entire subject is numbers.
+
+Bringing it current meant running the suites, which surfaced a test asserting
+its own fixture: it required a rejection reason to read "could not be matched",
+which is the **seeded** text, where a real declined inquiry says "Persona
+reported inquiry.declined". It was testing the seed, not the behaviour.
+
+**Decided.** Assert the shape, not the seeded string. A test that passes only
+against fixtures is worse than no test, because it goes red the first time the
+system does something real — which is the moment you most need it to be right.
+
+---
+
+## 2026-09-07T00:20 EDT — Do not print a status a live provider owns
+
+The sign-in page listed each demo customer with a fixed label, including their
+KYC state. Real Persona inquiries during the day had moved Priya to rejected and
+Alex to approved, so the page was quietly wrong about both.
+
+I restored the seeded states through Persona's own endpoints, and Persona's
+sandbox moved Priya again **eight seconds later**, by itself.
+
+**Decided.** Stop restoring, and stop asserting. The page now *reads* each
+customer's current KYC status from `kyc_events` and renders it, using the same
+ordering the enforcement path uses, so what the page says and what the gate
+enforces cannot disagree.
+
+**The general rule, which this project keeps re-learning:** our record of a
+provider's state is not the provider's state, and any label we hardcode about a
+live system is a lie with a delay fuse on it. The same mistake in different
+clothes as the unlink that trusted our own rows, and the demo-ready check that
+read an empty list as a free allowance.
+
+**Also removed** a callout warning that a browser holds one session at a time. It
+was true — the cross-customer "leakage" I chased earlier was one session cookie
+per browser, not an app bug — but it explained a browser to a reviewer who
+already knows how browsers work, on the one page that should be the shortest in
+the app.
