@@ -106,18 +106,6 @@ export default async function LoginPage({
         test identities, no real money and no real personal data.
       </p>
 
-      <div className="callout callout-warn" style={{ marginBottom: 16 }}>
-        <p style={{ margin: 0, fontSize: 12.5 }}>
-          <strong>One session per browser.</strong> Signing in here replaces the
-          session everywhere in this browser, including tabs you left open on
-          another customer. Those tabs keep showing the old page, but the next
-          button they send is sent as whoever signed in last — which looks
-          exactly like one customer&rsquo;s data leaking into another&rsquo;s.
-          {' '}To hold two roles at once, use a second browser profile or a
-          private window for the ops console.
-        </p>
-      </div>
-
       <div className="callout" style={{ marginBottom: 16 }}>
         <p style={{ margin: 0, fontSize: 12.5 }}>
           <strong>Walking the money path end to end?</strong>{' '}
