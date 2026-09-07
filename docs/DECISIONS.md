@@ -2078,3 +2078,36 @@ story than a guard I could claim.
 admissions. I think that trade is right at this stage: the deployed system and
 the invariants make the affirmative case, so the document can afford to spend
 its words on the parts that need a human to explain them.
+
+---
+
+## 2026-09-07T09:40 EDT — Reframed the gaps as work, and separated the calendar from both
+
+Two corrections to the cut list I rewrote ten minutes ago.
+
+**The "Known gaps" section came out.** Substance kept, framing dropped. A
+standalone list of confessions in the middle of a README reads as apology rather
+than as engineering — the reader meets six admissions before they meet a plan.
+The same six facts are now week-two items with their reasoning attached, which
+says exactly as much while pointing forward. "No open-order reserve, and here is
+what would break" is a defect report; "an open-order reserve against investable
+cash, because two orders can each pass against the same money" is work. The
+honesty is identical; only the tense changed.
+
+**Added what the closed market prevented**, separated from both other sections
+because it is neither a decision nor a defect. Today is Labor Day, and the
+system's calendar knows it: `isTradingDay('2026-09-07')` is false and the next
+open is the 8th. That matters more than it sounds — the blocker is one our own
+code predicts, so it can be stated as a modelled fact rather than pleaded as an
+excuse.
+
+Two things are unshown rather than unbuilt: a filled order, and a deposit
+clearing on its own. Everything downstream of a fill exists and is replay-tested;
+orders are resting at the broker with real ids right now. What is missing is the
+fill, and Alpaca will not manufacture one on a holiday.
+
+**Kept it short and cross-linked** rather than restating the Blocked section
+above it. The first draft explained the filled order twice at length, which is
+how a document starts arguing with itself — and the outgoing ACH is blocked for a
+reason that is emphatically *not* the calendar, so folding them together would
+have blurred a distinction I spent an afternoon establishing.
