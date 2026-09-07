@@ -1879,3 +1879,58 @@ That second one is the reason to write the document at all. Prose forces you to
 say precisely who is trusting whom, and a diagram that is one arrow too generous
 is exactly the kind of thing that reads as a simulated integration presented as
 live.
+
+---
+
+## 2026-09-07T12:38 EDT — An expiry is not a rejection, and a dead inquiry cannot decide
+
+I set Alex to `pending` at 06:21 through a real Persona inquiry and verified it:
+the gate showed "still in progress", the deposit route refused him. Six hours
+later he was `rejected`. The event history named the cause precisely:
+
+```
+rejected  eff 12:12:32  inq_...WfjYAbNsRaLb5HZYcmYx9h3q  "Persona reported inquiry.expired"
+pending   eff 06:21:05  inq_...WwvzJ6iFcJ92ehZewBxfoBAK
+```
+
+Different inquiry ids. Persona expired an **abandoned, already-superseded**
+inquiry on its own clock, and that event decided the customer's status.
+
+**Two bugs, and they are different bugs.**
+
+*The mapping.* `inquiry.expired` was mapped to `rejected`. An expiry is
+**abandonment, not a decision** — Persona expires an inquiry nobody finished,
+which does not mean the person failed a check, because no check was ever
+completed. We told the customer "identity verification was not successful" about
+a verification that never ran, and applied the hardest block we have on the
+strength of a timeout. Now `pending`, with a reason that says what happened and
+that the way out is to start again — "still in progress" with no explanation,
+six hours after someone walked away, is a dead end.
+
+*The provenance.* The handler never checked **which inquiry** an event belonged
+to. Status was "the latest event by `effective_at`" regardless of its source, so
+a long-dead inquiry reached forward and overwrote the live one. An event for an
+inquiry that is not the customer's current one is now recorded but not acted on.
+
+**The proviso matters.** Only ignore it if we have *seen that inquiry before*. A
+brand-new inquiry's first webhook can arrive before `persona_inquiry_id` has been
+updated to point at it, and an unknown inquiry is far more likely to be that than
+a stale one. Ignoring unknown inquiries outright would strand every fresh
+inquiry with no status at all — a fix that causes the bug it is fixing.
+
+**Why this is a different bug from the out-of-order one**, despite the family
+resemblance. That one was about **ordering**: the right events, sequenced by the
+wrong clock. This one is about **provenance**: events from a source that should
+no longer have a vote. Fixing ordering would not have caught it — the expiry
+genuinely was the latest event by Persona's clock. It was simply not *about*
+anything current.
+
+**What it cost.** I had already written the note in the README that this
+project keeps re-learning the same rule — our record of a provider's state is
+not the provider's state. This is the sharper version: a provider's event is not
+automatically *about* the thing you are tracking, and "latest wins" quietly
+assumes it is.
+
+**Still owed:** a test. The rule lives in route code rather than in the schema,
+so neither the invariant suite nor the unit tests reach it. It is pinned by
+nothing but this entry, which is the weakest form of pinning there is.
