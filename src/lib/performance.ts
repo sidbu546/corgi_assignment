@@ -34,7 +34,7 @@ import {
   type DailyPoint,
   type TwrResult,
 } from './returns';
-import { calendarDaysBetween, type MarketDate } from './calendar';
+import { calendarDaysBetween, type MarketDate, MARKET_DAY_END_SQL, MARKET_DAY_START_SQL } from './calendar';
 import type { Cents } from './money';
 
 export interface PerformanceInput {
@@ -106,8 +106,8 @@ export async function performance(
        FROM journal_lines l
        JOIN journal_entries e ON e.id = l.entry_id
       WHERE l.commodity = 'USD'
-        AND e.effective_at >= $2::date
-        AND e.effective_at <  ($3::date + 1)
+        AND e.effective_at >= ${MARKET_DAY_START_SQL('$2')}
+        AND e.effective_at <  ${MARKET_DAY_END_SQL('$3')}
         AND e.recorded_at  <= coalesce($4::timestamptz, 'infinity')
         -- the entry concerns this customer at all
         AND EXISTS (

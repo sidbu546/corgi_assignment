@@ -33,6 +33,7 @@ import Decimal from 'decimal.js';
 import type { PoolClient } from 'pg';
 import type { MarketDate } from '../calendar';
 import type { Cents } from '../money';
+import { MARKET_DAY_END_SQL } from '../calendar';
 
 export const CUSTODIAN_SOURCE = 'custodian-sim:v1';
 
@@ -102,7 +103,7 @@ export async function generateFile(
        JOIN journal_entries e ON e.id = l.entry_id
       WHERE l.customer_id = $1::uuid
         AND l.account_code = 'assets:positions'
-        AND e.effective_at < ($2::date + 1)
+        AND e.effective_at < ${MARKET_DAY_END_SQL('$2')}
       GROUP BY 1
      HAVING sum(l.units) <> 0
       ORDER BY 1`,
@@ -153,7 +154,7 @@ export async function generateFile(
        JOIN journal_entries e ON e.id = l.entry_id
       WHERE l.customer_id = $1::uuid
         AND l.account_code = 'assets:cash:settled'
-        AND e.effective_at < ($2::date + 1)`,
+        AND e.effective_at < ${MARKET_DAY_END_SQL('$2')}`,
     [input.customerId, input.asOf],
   );
 
@@ -230,7 +231,7 @@ export async function ourSnapshot(
        JOIN journal_entries e ON e.id = l.entry_id
       WHERE l.customer_id = $1::uuid
         AND l.account_code = 'assets:positions'
-        AND e.effective_at < ($2::date + 1)
+        AND e.effective_at < ${MARKET_DAY_END_SQL('$2')}
       GROUP BY 1
      HAVING sum(l.units) <> 0`,
     [customerId, asOf],
@@ -249,7 +250,7 @@ export async function ourSnapshot(
                                'assets:cash:unsettled_proceeds',
                                'assets:cash:pending_deposit',
                                'liabilities:trade_payable')
-        AND e.effective_at < ($2::date + 1)
+        AND e.effective_at < ${MARKET_DAY_END_SQL('$2')}
       GROUP BY 1`,
     [customerId, asOf],
   );

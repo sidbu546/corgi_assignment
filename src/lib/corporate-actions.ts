@@ -45,6 +45,7 @@ import { loadLots, openLot, remainingCost, remainingUnits } from './ledger/lots'
 import { resolvePrice } from './providers/marketdata';
 import type { MarketDate } from './calendar';
 import { UNIT_DP } from './money';
+import { MARKET_DAY_END_SQL } from './calendar';
 
 export interface SplitResult {
   symbol: string;
@@ -180,7 +181,7 @@ export async function applySplit(
        JOIN customers c ON c.id = l.customer_id
       WHERE l.account_code = 'assets:positions'
         AND l.commodity = $1
-        AND e.effective_at < ($2::date + 1)
+        AND e.effective_at < ${MARKET_DAY_END_SQL('$2')}
       GROUP BY l.customer_id, c.legal_name
      HAVING sum(l.units) > 0
       ORDER BY c.legal_name`,

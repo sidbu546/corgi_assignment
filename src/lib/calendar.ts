@@ -220,3 +220,23 @@ export function isMarketOpen(instant: Date): boolean {
   const minutes = hour * 60 + minute;
   return minutes >= 9 * 60 + 30 && minutes < 16 * 60;
 }
+
+/**
+ * The instant a market DATE ends, as a timestamptz.
+ *
+ * `effective_at < (d::date + 1)` looks right and is wrong. It compares a
+ * timestamptz against midnight in the SESSION timezone, which is UTC here,
+ * while a MarketDate is a New York calendar day. Anything booked between
+ * 20:00 and 23:59 New York therefore has a UTC effective_at on the following
+ * date and falls outside its own day — a four-hour blind spot every evening.
+ *
+ * It cost a settled $25,000 deposit its place in the portfolio: the ledger held
+ * it, the valuation could not see it, and the screen showed the pre-deposit
+ * figure with nothing obviously broken.
+ */
+export const MARKET_DAY_END_SQL = (param: string) =>
+  `((${param}::date + 1)::timestamp AT TIME ZONE 'America/New_York')`;
+
+/** The instant a market DATE begins, as a timestamptz. Same reasoning. */
+export const MARKET_DAY_START_SQL = (param: string) =>
+  `((${param}::date)::timestamp AT TIME ZONE 'America/New_York')`;

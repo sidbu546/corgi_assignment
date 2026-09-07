@@ -32,6 +32,7 @@ import type { PoolClient } from 'pg';
 import { marketValueCents, type Cents } from './money';
 import { resolvePrice } from './providers/marketdata';
 import type { MarketDate } from './calendar';
+import { MARKET_DAY_END_SQL } from './calendar';
 
 export interface ValuationInput {
   asOf: MarketDate;
@@ -103,7 +104,7 @@ export async function runValuation(
        FROM journal_lines l
        JOIN journal_entries e ON e.id = l.entry_id
       WHERE l.account_code = 'assets:positions'
-        AND e.effective_at < ($1::date + 1)
+        AND e.effective_at < ${MARKET_DAY_END_SQL('$1')}
         AND e.recorded_at  <= coalesce($2::timestamptz, 'infinity')
         AND ($3::uuid IS NULL OR l.customer_id = $3::uuid)
       GROUP BY 1, 2
@@ -123,7 +124,7 @@ export async function runValuation(
         AND l.account_code IN ('assets:cash:settled',
                                'assets:cash:unsettled_proceeds',
                                'assets:cash:pending_deposit')
-        AND e.effective_at < ($1::date + 1)
+        AND e.effective_at < ${MARKET_DAY_END_SQL('$1')}
         AND e.recorded_at  <= coalesce($2::timestamptz, 'infinity')
         AND ($3::uuid IS NULL OR l.customer_id = $3::uuid)
       GROUP BY 1, 2`,
@@ -140,7 +141,7 @@ export async function runValuation(
        JOIN journal_entries e ON e.id = l.entry_id
       WHERE l.account_code = 'assets:positions:cost'
         AND l.related_symbol IS NOT NULL
-        AND e.effective_at < ($1::date + 1)
+        AND e.effective_at < ${MARKET_DAY_END_SQL('$1')}
         AND e.recorded_at  <= coalesce($2::timestamptz, 'infinity')
         AND ($3::uuid IS NULL OR l.customer_id = $3::uuid)
       GROUP BY 1, 2`,
