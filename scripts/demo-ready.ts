@@ -73,9 +73,13 @@ async function main() {
       pending: bigint | null;
     }>(
       `SELECT c.legal_name, c.email, c.alpaca_account_id,
+              -- Same ordering as kycStatus() in onboarding.ts. It omitted
+              -- recorded_at, so with two events sharing an effective_at this
+              -- could name a different status than the app enforced.
               (SELECT k.status FROM kyc_events k
                 WHERE k.customer_id = c.id
-                ORDER BY k.effective_at DESC, k.id DESC LIMIT 1) AS kyc,
+                ORDER BY k.effective_at DESC, k.recorded_at DESC, k.id DESC
+                LIMIT 1) AS kyc,
               coalesce((SELECT sum(l.amount_cents)::bigint FROM journal_lines l
                  WHERE l.customer_id = c.id
                    AND l.account_code = 'assets:cash:settled'), 0) AS settled,

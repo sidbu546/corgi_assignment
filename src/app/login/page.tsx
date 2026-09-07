@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
-import { queryOne } from '@/lib/db';
+import { query, queryOne } from '@/lib/db';
 import { SESSION_COOKIE, encodeSession, verifyPassword } from '@/lib/auth';
 import { currentUser } from '@/lib/session';
 
@@ -58,12 +58,12 @@ async function login(formData: FormData) {
 }
 
 const DEMO_LOGINS = [
-  { email: 'dana@demo.ledgerly.app', password: 'demo-password', note: 'Customer — funded, two deposits, a FIFO sell' },
+  { email: 'dana@demo.ledgerly.app', password: 'demo-password', note: 'Customer — funded, a FIFO sell, splits applied' },
   { email: 'marcus@demo.ledgerly.app', password: 'demo-password', note: 'Customer — funded, Balanced model' },
-  { email: 'priya@demo.ledgerly.app', password: 'demo-password', note: 'Customer — KYC PENDING, cannot transact' },
-  { email: 'alex@demo.ledgerly.app', password: 'demo-password', note: 'Customer — KYC REJECTED, cannot transact' },
-  { email: 'ops@demo.ledgerly.app', password: 'ops-password', note: 'Ops — maker (proposes)' },
-  { email: 'approver@demo.ledgerly.app', password: 'ops-password', note: 'Ops — checker (approves)' },
+  { email: 'priya@demo.ledgerly.app', password: 'demo-password', note: 'Customer' },
+  { email: 'alex@demo.ledgerly.app', password: 'demo-password', note: 'Customer' },
+  { email: 'ops@demo.ledgerly.app', password: 'ops-password', note: 'Ops — maker (raises)' },
+  { email: 'approver@demo.ledgerly.app', password: 'ops-password', note: 'Ops — checker (approves and executes)' },
 ];
 
 export default async function LoginPage({
@@ -75,6 +75,28 @@ export default async function LoginPage({
   if (existing) redirect(existing.role === 'ops' ? '/ops' : '/portfolio');
 
   const params = await searchParams;
+
+  // Read each demo customer's KYC status rather than printing a fixed label.
+  //
+  // The buttons on /portfolio call Persona's OWN sandbox endpoints, so these
+  // states genuinely move — and Persona's sandbox moves some of them by itself.
+  // A hardcoded "KYC PENDING" beside a customer Persona has since declined is
+  // the page telling a small lie about a live system, which is the one thing
+  // this project cannot afford to do casually.
+  const kyc = new Map<string, string>();
+  {
+    const rows = await query<{ email: string; status: string }>(
+      `SELECT c.email,
+              (SELECT k.status FROM kyc_events k
+                WHERE k.customer_id = c.id
+                ORDER BY k.effective_at DESC, k.recorded_at DESC, k.id DESC
+                LIMIT 1) AS status
+         FROM customers c
+        WHERE c.email = ANY ($1::text[])`,
+      [DEMO_LOGINS.map((l) => l.email)],
+    );
+    for (const r of rows) if (r.status) kyc.set(r.email, r.status);
+  }
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto' }}>
@@ -189,6 +211,21 @@ export default async function LoginPage({
                       </div>
                       <div className="dim" style={{ fontSize: 12 }}>
                         {l.note}
+                        {kyc.has(l.email) && (
+                          <>
+                            {' · KYC '}
+                            <span
+                              style={{
+                                color:
+                                  kyc.get(l.email) === 'approved'
+                                    ? 'var(--accent)'
+                                    : 'var(--warn)',
+                              }}
+                            >
+                              {kyc.get(l.email)}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
