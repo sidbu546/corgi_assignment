@@ -20,14 +20,10 @@ access to anything.
 
 ## The webhook delivery log
 
-Required by the brief, and it is a live page rather than a screenshot:
-
 **https://corgi-assignment.vercel.app/webhooks** — public, no sign-in.
 
-Every inbound delivery with its signature verdict, what was done with it, and
-how many times it was redelivered. Signature verification happens **before** the
-idempotency key is claimed, because the other order lets a forged event suppress
-a real one.
+Every inbound delivery from Persona, Plaid and the Alpaca bridge, with its
+signature verdict, what was done with it, and how many times it arrived.
 
 Also public:
 
