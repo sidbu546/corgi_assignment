@@ -1852,7 +1852,7 @@ they drifted it was because a number moved and the prose did not.
 
 ---
 
-## 2026-09-07T02:41 EDT — A design document, and the claim it made me check
+## 2026-09-07T02:07 EDT — A design document, and the claim it made me check
 
 `DECISIONS.md` is a log — chronological, and it assumes you were there. A
 reviewer arriving cold needs the settled picture instead: what the tables are,
@@ -1882,15 +1882,16 @@ live.
 
 ---
 
-## 2026-09-07T12:38 EDT — An expiry is not a rejection, and a dead inquiry cannot decide
+## 2026-09-07T08:38 EDT — An expiry is not a rejection, and a dead inquiry cannot decide
 
-I set Alex to `pending` at 06:21 through a real Persona inquiry and verified it:
+I set Alex to `pending` at 02:21 through a real Persona inquiry and verified it:
 the gate showed "still in progress", the deposit route refused him. Six hours
-later he was `rejected`. The event history named the cause precisely:
+later he was `rejected`. The event history named the cause precisely — times
+below are **UTC, as `kyc_events` stores them**, so subtract four for EDT:
 
 ```
-rejected  eff 12:12:32  inq_...WfjYAbNsRaLb5HZYcmYx9h3q  "Persona reported inquiry.expired"
-pending   eff 06:21:05  inq_...WwvzJ6iFcJ92ehZewBxfoBAK
+rejected  eff 12:12:32Z  inq_...WfjYAbNsRaLb5HZYcmYx9h3q  "Persona reported inquiry.expired"
+pending   eff 06:21:05Z  inq_...WwvzJ6iFcJ92ehZewBxfoBAK
 ```
 
 Different inquiry ids. Persona expired an **abandoned, already-superseded**
@@ -1934,3 +1935,58 @@ assumes it is.
 **Still owed:** a test. The rule lives in route code rather than in the schema,
 so neither the invariant suite nor the unit tests reach it. It is pinned by
 nothing but this entry, which is the weakest form of pinning there is.
+
+---
+
+## 2026-09-07T08:55 EDT — I got my own timestamps wrong, twice, in a log about being precise
+
+Audited every checkable claim in the README rather than only what I had touched.
+One number was wrong: **the flow rule is pinned by 11 tests, not 10.** A test was
+added to that group and the count was not.
+
+Trivial alone. It matters because the README's argument is that its numbers are
+verifiable in one command, which is a good argument only while they survive being
+verified. A reviewer who checks the first number and finds it wrong has no reason
+to check the second.
+
+**Then the same failure, in this file, about this file's own subject.** Two
+entries stamped today were wrong:
+
+- `12:38 EDT` on the Persona entry was **UTC wearing an EDT label**. The commit
+  is `08:38`. I read the clock from a `toISOString()` and typed the digits.
+- `02:41 EDT` on the design-document entry was 34 minutes *after* the commit it
+  describes. I guessed instead of checking.
+
+The event times quoted inside that entry were also raw UTC presented bare, in a
+log whose preamble says every time is EDT. Now labelled `Z` and marked as stored.
+
+**Both corrected in place, and that is not a contradiction with what I wrote
+three hours ago about not editing this log.** The distinction is between
+*revising a record to suit today* and *fixing a label that was wrong when
+written*. The earlier "ten tests" entry stays exactly as it is, because it was
+true when written and today's count does not retroactively change what I knew.
+A timestamp that says EDT while holding UTC was never true — correcting it is
+the same class of act as the bulk `Z → EDT` conversion, not the same class as
+rewriting a figure.
+
+**The irony is the useful part.** This project's recurring bug is a clock: market
+dates compared in UTC, `now()` as transaction time, `recorded_at` versus
+`effective_at`, a provider's clock versus ours. I have now added my own wrist to
+that list. The lesson generalises past the joke: **a timestamp you typed is not
+evidence; a timestamp you can derive is.** Every entry that came from `git log`
+today was right. Both that I typed from memory were wrong.
+
+**Verified in the same pass**, current as of this entry: 78 unit tests
+(17+15+9+24+2+11 across six files), 32 invariants, smoke-ui 26, replay-test 6,
+restate 9, split-test 16, agent-demo 14, browser-path 12 (9 direct checks plus a
+three-page loop). Four live integration slots across three providers. Also
+re-checked prose rather than only digits: `/restatements` carries both the
+corrected-close and the split controls, `/recon` offers clean and planted runs.
+
+**Not run:** `browser-path`, counted statically. It opens a new customer and a
+real ACH every time, and five such customers already sit on the books from
+earlier runs. Which is its own finding — **a verification script that cannot run
+without changing the system is one you will avoid running, and a test you avoid
+running protects nothing.** Week two: a `--dry-run`, or let it close what it
+opened. The customer rows can be closed even though the journal lines behind them
+cannot be deleted.
